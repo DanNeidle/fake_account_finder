@@ -5,10 +5,10 @@ from tqdm import tqdm
 import sys
 from bs4 import BeautifulSoup
 
-companies_house_snapshot = "BasicCompanyDataAsOneFile-2025-01-01.csv"
+companies_house_snapshot = "companies_house_data/BasicCompanyDataAsOneFile-2025-01-01.csv"
 sic_codes_file = "sic_codes.json"
 
-ACCOUNTS_LOOKUP_TABLE_FILE = "company_accounts_lookup.json"
+ACCOUNTS_LOOKUP_TABLE_FILE = "companies_house_data/company_accounts_lookup.json"
 CASH_ALERT_VALUE = 1e7
 OTHER_ALERT_VALUE = 1e8
 

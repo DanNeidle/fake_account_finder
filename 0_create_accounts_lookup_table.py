@@ -15,10 +15,10 @@ done
 """
 
 # Directory containing account files
-accounts_directory = "accounts"
+accounts_directory = "companies_house_data"
 
 # Output JSON file
-output_json = "company_accounts_lookup.json"
+output_json = "companies_house_data/company_accounts_lookup.json"
 
 company_accounts_lookup = {}
 
