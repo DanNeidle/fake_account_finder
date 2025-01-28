@@ -24,16 +24,21 @@ LOGO_LINK = "https://taxpolicy.org.uk"
 
 def print_help():
     help_text = """
-Usage: python 3_export_results.py <SIC_CODES>
+Usage: python 3_export_results.py <SEARCH_ARGS>
 
-<SIC_CODES> can be a single SIC code or multiple SIC codes separated by '-'.
+<SEARCH_ARGS> are the previous search args.
 
-If a regulation-<SIC_CODES> file exists then this script will use that (e.g. if you've run the second script)
-if it doesn't exist, this script will use companies-<SIC_CODES> (appropriate if it's an unregulated area and you didn't need to run the second script)
+This could be a single SIC code or multiple SIC codes separated by '-'.
+
+Or it could be an address (with _s instead of spaces)
+
+If a regulation-<SEARCH_ARGS> file exists then this script will use that (e.g. if you've run the second script)
+if it doesn't exist, this script will use companies-<SEARCH_ARGS> (appropriate if it's an unregulated area and you didn't need to run the second script)
 
 Examples:
     python 3_export_results.py 64110
     python 3_export_results.py 64110-64910-64999
+    python 3_export_results.py 124_city_road
     
 """
     print(help_text)
@@ -42,11 +47,17 @@ Examples:
 def read_command_line_args():
     
     if len(sys.argv) < 2:
-        print("Error: No SIC codes provided.")
+        print("Error: No command line argument codes provided.")
         print_help()
         sys.exit(1)
         
-    sic_codes = sys.argv[1].split('-')
+    # is it a SIC code search?
+    if all(char.isdigit() or char == '-' for char in sys.argv[1]):
+        sic_codes = sys.argv[1].split('-')
+        print(f"This is SIC code file: {sic_codes}")
+    else:
+        print(f"This is an address search file")
+        sic_codes = None
     
     input_file = f"companies-unregulated-{sys.argv[1]}.json"
     alternative_input_file =  f"companies-{sys.argv[1]}.json"
@@ -63,41 +74,45 @@ def read_command_line_args():
         print_help()
         exit(0)
         
-    
-    # Load SIC codes descriptions from sic_codes.json
-    if not os.path.exists(sic_codes_file):
-        print(f"Error: SIC codes file '{sic_codes_file}' not found.")
-        sys.exit(1)
-    
-    with open(sic_codes_file, mode="r", encoding="utf-8") as f:
-        try:
-            all_sic_codes = json.load(f)
-        except json.JSONDecodeError:
-            print(f"Error: Failed to parse '{sic_codes_file}'. Ensure it's valid JSON.")
+    if sic_codes:
+        
+        # Load SIC codes descriptions from sic_codes.json
+        if not os.path.exists(sic_codes_file):
+            print(f"Error: SIC codes file '{sic_codes_file}' not found.")
             sys.exit(1)
-    
-    # Validate SIC codes
-    invalid_sics = [code for code in sic_codes if code not in all_sic_codes]
-    if invalid_sics:
-        print(f"Error: Invalid SIC codes: {', '.join(invalid_sics)}")
-        print_help()
-        sys.exit(1)
-    
-    # Construct relevant_sic_codes dict
-    relevant_sic_codes = {code: all_sic_codes[code] for code in sic_codes}
-    
-    # Print the SIC codes and descriptions
-    print("Running with the following SIC codes:")
-    for code, desc in relevant_sic_codes.items():
-        print(f"{code}: {desc}")
-    
-    if len(relevant_sic_codes) == 1:
-        key, value = next(iter(relevant_sic_codes.items()))
-        table_title = f"{key}: {value}"
+        
+        with open(sic_codes_file, mode="r", encoding="utf-8") as f:
+            try:
+                all_sic_codes = json.load(f)
+            except json.JSONDecodeError:
+                print(f"Error: Failed to parse '{sic_codes_file}'. Ensure it's valid JSON.")
+                sys.exit(1)
+        
+        # Validate SIC codes
+        invalid_sics = [code for code in sic_codes if code not in all_sic_codes]
+        if invalid_sics:
+            print(f"Error: Invalid SIC codes: {', '.join(invalid_sics)}")
+            print_help()
+            sys.exit(1)
+        
+        # Construct relevant_sic_codes dict
+        relevant_sic_codes = {code: all_sic_codes[code] for code in sic_codes}
+        
+        # Print the SIC codes and descriptions
+        print("Running with the following SIC codes:")
+        for code, desc in relevant_sic_codes.items():
+            print(f"{code}: {desc}")
+        
+        if len(relevant_sic_codes) == 1:
+            key, value = next(iter(relevant_sic_codes.items()))
+            table_title = f"{key}: {value}"
+        else:
+            table_title = ", ".join(relevant_sic_codes.keys())
+        
+        print(f"\nAnalysing and exporting output table '{table_title}'")   
+        
     else:
-        table_title = ", ".join(relevant_sic_codes.keys())
-    
-    print(f"\nAnalysing and exporting output table '{table_title}'")    
+        table_title =  sys.argv[1].replace("_", " ").title()
         
     return input_file, table_title
 
