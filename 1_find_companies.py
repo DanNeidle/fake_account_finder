@@ -14,48 +14,124 @@ OTHER_ALERT_VALUE = 1e8
 
 
 
+
 def print_help():
     help_text = """
-Usage: python 1_find_companies.py <SIC_CODES>
+Usage:
+    python 1_find_companies.py <SIC_CODES>
 
-<SIC_CODES> can be a single SIC code or multiple SIC codes separated by '-'.
+Description:
+    Find companies based on Standard Industrial Classification (SIC) codes.
+
+Arguments:
+    <SIC_CODES>
+        A single SIC code or multiple SIC codes separated by hyphens (-).
 
 Examples:
+    # Search for a single SIC code
     python 1_find_companies.py 64110
+
+    # Search for multiple SIC codes
     python 1_find_companies.py 64110-64910-64999
-    
 
-Some interesting SIC codes:
+Options:
+    -sic
+        Display a list of the most relevant SIC codes.
 
-    "64191": "Banks",
-    "64110": "Central banking",
-    "64192": "Building societies",
-    "64301": "Activities of investment trusts",
-    "64302": "Activities of unit trusts",
-    "64303": "Activities of venture and development capital companies",
-    "64304": "Activities of open-ended investment companies",
-    "64305": "Activities of property unit trusts",
-    "64306": "Activities of real estate investment trusts",
-    "64910": "Financial leasing",
-    "64921": "Credit granting by non-deposit taking finance houses and other specialist consumer credit grantors",
-    "64922": "Activities of mortgage finance companies",
-    "64929": "Other credit granting n.e.c.",
-    "64991": "Security dealing on own account",
-    "64992": "Factoring",
-    "64999": "Financial intermediation not elsewhere classified",
-    "65110": "Life insurance",
-    "65120": "Non-life insurance",
-    "65201": "Life reinsurance",
-    "65202": "Non-life reinsurance",
-    "65300": "Pension funding",
-    "66120": "Security and commodity contracts dealing activities",
-    "66220": "Activities of insurance agents and brokers",
-    "66300": "Fund management activities",
-    
+    -sic TEXT
+        Show all SIC codes that contain the specified TEXT.
+
+    -sic all
+        Display every single SIC code available.
+        
 """
+
     print(help_text)
+    
+    
+
+def load_sic_codes():
+    # Load SIC codes descriptions from sic_codes.json
+    if not os.path.exists(sic_codes_file):
+        print(f"Error: SIC codes file '{sic_codes_file}' not found.")
+        sys.exit(1)
+    
+    with open(sic_codes_file, mode="r", encoding="utf-8") as f:
+        try:
+            all_sic_codes = json.load(f)
+        except json.JSONDecodeError:
+            print(f"Error: Failed to parse '{sic_codes_file}'. Ensure it's valid JSON.")
+            sys.exit(1)
+            
+    return all_sic_codes
+    
+def print_sics():
+    
+    if len(sys.argv) < 3:
+        
+        interesting_sics = """
+
+    Some interesting SIC codes:
+
+        64191: Banks
+        64110: Central banking
+        64192: Building societies
+        64301: Activities of investment trusts
+        64302: Activities of unit trusts
+        64303: Activities of venture and development capital companies
+        64304: Activities of open-ended investment companies
+        64305: Activities of property unit trusts
+        64306: Activities of real estate investment trusts
+        64910: Financial leasing
+        64921: Credit granting by non-deposit taking finance houses and other specialist consumer credit grantors
+        64922: Activities of mortgage finance companies
+        64929: Other credit granting n.e.c.
+        64991: Security dealing on own account
+        64992: Factoring
+        64999: Financial intermediation not elsewhere classified
+        65110: Life insurance
+        65120: Non-life insurance
+        65201: Life reinsurance
+        65202: Non-life reinsurance
+        65300: Pension funding
+        66120: Security and commodity contracts dealing activities
+        66220: Activities of insurance agents and brokers
+        66300: Fund management activities
+        
+        Run with -sic TEXT to see all the SIC codes matching TEXT
+        or run with -sic ALL to see every SIC code.
+        
+    """
+        print(interesting_sics)
+        
+    else:
+        
+        filter = sys.argv[2].lower()
+        
+        print(f"\nListing SIC codes matching '{filter}':")
+        
+        all_sic_codes = load_sic_codes()
+        
+        for code, description in all_sic_codes.items():
+            if (filter == "all") or (filter in description.lower()):
+                print(f"{code}: {description}")
+    
+        print("")
 
 
+def print_all_sics():
+
+    print("All SIC codes:")
+    
+    
+    
+    
+    
+    print("")
+    
+    return
+    
+    
 
 def extract_assets(ixbrl_file):
     with open(ixbrl_file, mode="r", encoding="utf-8") as file:
@@ -136,30 +212,25 @@ def find_large_companies(companies, lookup_table):
     print(f"\nOf which {len(suspect_companies)} have large balance sheets")
     return suspect_companies
 
-    
 
 def construct_sic_dictionary():
-    # Check if arguments are provided
+    
+     # Check if arguments are provided
     if len(sys.argv) < 2:
         print("Error: No SIC codes provided.")
         print_help()
         sys.exit(1)
     
+    if sys.argv[1] == "-sic":
+        print_sics()
+        exit(0)
+        
+    
     # Get the SIC codes argument
     sic_arg = sys.argv[1]
     sic_codes = sic_arg.split('-')
     
-    # Load SIC codes descriptions from sic_codes.json
-    if not os.path.exists(sic_codes_file):
-        print(f"Error: SIC codes file '{sic_codes_file}' not found.")
-        sys.exit(1)
-    
-    with open(sic_codes_file, mode="r", encoding="utf-8") as f:
-        try:
-            all_sic_codes = json.load(f)
-        except json.JSONDecodeError:
-            print(f"Error: Failed to parse '{sic_codes_file}'. Ensure it's valid JSON.")
-            sys.exit(1)
+    all_sic_codes = load_sic_codes()
     
     # Validate SIC codes
     invalid_sics = [code for code in sic_codes if code not in all_sic_codes]
@@ -300,7 +371,6 @@ def load_accounts_lookup_table():
 
 def main():
 
-    
     relevant_sic_codes = construct_sic_dictionary()
     
     search_results, total_searched = find_matching_companies(relevant_sic_codes)
