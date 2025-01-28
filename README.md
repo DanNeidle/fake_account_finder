@@ -33,9 +33,10 @@ Instructions:
 
 ## 2. Prepare the Data Directory
 
-1. Create a directory for Companies House data:
+1. Create a directory for Companies House data and for output data:
     ```bash
     mkdir companies_house_data
+    mkdir output
     ```
 
 ---
@@ -81,56 +82,60 @@ If you wish to filter for regulatory status, you need an API key from the Financ
 
 1. Run the script to create a lookup table that indexes all accounts:
     ```bash
-    python 0_create_accounts_lookup_table.py
+    python create_accounts_lookup_table.py
     ```
 
 ---
 
 ## 7. Investigate SIC Codes
 
-### Search for Specific SIC Codes
+### Lookup SIC Codes
 
-1. Filter for a SIC code of interest. For example, to find companies with "TRUST" in their SIC:
+1. To list SIC codes for an area of interest, for example companies with 'trust' in their SIC:
     ```bash
-    python 1_find_companies.py -sic TRUST
+    python find_companies.py -sic TRUST
     ```
 
-2. Alternatively, see a list of the most likely suspect SICs:
+2. Alternatively, for a list of the most likely suspect SICs:
     ```bash
     python 1_find_companies.py -sic
     ```
 
-### Investigate a Specific SIC Code
+### Search all companies for specific SIC codes
 
-1. To investigate a specific SIC code (e.g., Central Bank, 64110):
+1. To investigate a specific SIC code (e.g., "central bank" is 64110):
     ```bash
-    python 1_find_companies.py -sic 64110
+    python find_companies.py -sic 64110
     ```
 
-    - This will output a file named `companies-64110.json` containing all companies with the SIC code and large balance sheets.
+    - This will output a file named `companies-64110.json` containing all companies with the SIC code AND large balance sheets.
 
 2. To search for multiple SIC codes simultaneously, separate them with hyphens:
     ```bash
-    python 1_find_companies.py -sic 64110-64120
+    python find_companies.py -sic 64110-64120
     ```
+
+    - This will output a file named `companies-64110-64120.json` containing all companies with these SIC codes AND large balance sheets.
 
 ### Search by Registered Office Address
 
-1. You can also search by a registered office address. For example:
+1. You can, alternatively, search by a registered office address. Make sure to include quotes. For example:
     ```bash
-    python 1_find_companies.py -address "124 city road"
+    python find_companies.py -address "124 city road"
     ```
+
+    - This will output a file named `companies-124_city_road.json`, in the output folder, containing all companies with a matching registered office AND large balance sheets.
 
 ---
 
 ## 8. Filter for Unregulated Entities
 
-1. To include only unregulated entities, filter the previous output:
+1. You can add FCA register info to the json, so we can later exclude properly regulated entities. Specify the :
     ```bash
     python 2_find_unregulated_companies.py 64110
     ```
 
-   - This will create a file named `companies-unregulated-64110.json`.
+   - This will create a file named `companies-with-reg-info-64110.json`, in the output folder
 
 ---
 
@@ -138,18 +143,11 @@ If you wish to filter for regulatory status, you need an API key from the Financ
 
 1. Export the final data to HTML and CSV formats:
     ```bash
-    python 3_export_results.py 64110
+    python export_results.py 64110
     ```
 
-   - If an "unregulated" JSON file exists, it will be used; otherwise, the "company" JSON file will be used.
-   - This command creates `results-64110.html` and `results-64110.csv`.
-
----
-
-## Notes
-
-- For faster and more reliable processing, use local datasets instead of APIs wherever possible.
-- Always verify the integrity of the downloaded data.
+   - If an "with-reg-info" JSON file exists, it will be used; otherwise, the "company" JSON file will be used.
+   - This command creates `results-64110.html` and `results-64110.csv`, in the output folder
 
 ---
 
