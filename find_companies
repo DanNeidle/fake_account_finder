@@ -12,6 +12,7 @@ import argparse
 import time
 import requests
 import re
+import sqlite3
 
 from tqdm import tqdm
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -48,78 +49,52 @@ def load_json_file(filepath, description):
             return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         sys.exit(f"Error: Failed to load '{filepath}'. Ensure it exists and is valid JSON.")
-
-def read_with_progress(file, pbar):
-    """Generator that reads lines from a file and updates the progress bar."""
-    for line in file:
-        pbar.update(len(line.encode("utf-8")))
-        yield line
-
-def read_csv_with_progress(filepath, desc):
-    """Generator to read CSV rows with a progress bar."""
-    file_size = os.path.getsize(filepath)
-    with open(filepath, "r", encoding="utf-8") as f:
-        first_line = f.readline()
-        headers = [h.strip() for h in first_line.strip().split(",")]
-        reader = csv.DictReader(
-            read_with_progress(f, tqdm(total=file_size - len(first_line.encode("utf-8")),
-                                       unit="B", unit_scale=True, desc=desc)),
-            fieldnames=headers
-        )
-        yield from reader
-
-
+        
 
 def extract_ixbrl_data(ixbrl_path):
-    """
-    Extract 'financials', 'dormant' and 'name' from an iXBRL file using lxml.
-    """
+    """Extract 'financials', 'dormant', and 'name' from an iXBRL file."""
     data = {"financials": {}, "dormant": None, "name": None}
     try:
-        with open(ixbrl_path, "rb") as f:
-            tree = etree.parse(f)
+        tree = etree.parse(ixbrl_path)
     except Exception as e:
         print(f"Error parsing {ixbrl_path}: {e}")
         return data
 
     try:
-        # Grab all ix:nonFraction elements
+        # Extract nonFraction elements
         non_fracs = tree.xpath('//*[local-name()="nonFraction"]')
-    
-        for elem in non_fracs:
-            tag = elem.get("name", "")
-            local_tag = tag.split(":", 1)[-1] if ":" in tag else tag
-            val = "".join(elem.itertext()).strip()
-            data["financials"][local_tag] = val
+        data["financials"] = {
+            elem.get("name", "").split(":", 1)[-1]: ''.join(elem.itertext()).strip()
+            for elem in non_fracs
+        }
     except Exception as e:
-        print(f"Error extracting ix:nonFraction from {ixbrl_path}: {e}")
+        print(f"Error extracting nonFraction from {ixbrl_path}: {e}")
 
     try:
-        non_num = tree.xpath('//*[local-name()="nonNumeric" and '
-                             '(substring-after(@name, ":")="EntityDormantTruefalse" or '
-                             ' substring-after(@name, ":")="EntityCurrentLegalOrRegisteredName")]')
+        # Extract nonNumeric elements for 'dormant' and 'name'
+        non_num = tree.xpath(
+            '//*[local-name()="nonNumeric" and '
+            '(substring-after(@name, ":")="EntityDormantTruefalse" or '
+            'substring-after(@name, ":")="EntityCurrentLegalOrRegisteredName")]'
+        )
         for elem in non_num:
-            tag = elem.get("name", "")
-            local_tag = tag.split(":", 1)[-1] if ":" in tag else tag
-            val = "".join(elem.itertext()).strip()
+            local_tag = elem.get("name", "").split(":", 1)[-1]
+            val = ''.join(elem.itertext()).strip()
             if local_tag == "EntityDormantTruefalse":
-                data["dormant"] = "Yes" if (val.lower() == "true") else ""
+                data["dormant"] = "Yes" if val.lower() == "true" else ""
             elif local_tag == "EntityCurrentLegalOrRegisteredName":
                 data["name"] = val
-                
     except Exception as e:
-        print(f"Error extracting ix:nonNumeric from {ixbrl_path}: {e}")
+        print(f"Error extracting nonNumeric from {ixbrl_path}: {e}")
 
     return data
 
 
 def filter_for_large_companies(companies, lookup_table, cash_only=False, nofilter=False):
-    
     if nofilter:
-        print("-nofilter - so returning all matching companies, not filtering for large balance sheets")
-        all_results = []
-        for co in companies:
-            all_results.append({
+        print("-nofilter - returning all matching companies without filtering.")
+        return [
+            {
                 "CompanyName": co.get("CompanyName", "").strip(),
                 "CompanyNumber": co.get("CompanyNumber", "").strip(),
                 "SIC1": co["Data"].get("SICCode.SicText_1", ""),
@@ -129,64 +104,48 @@ def filter_for_large_companies(companies, lookup_table, cash_only=False, nofilte
                 "Cash": "",
                 "SuspectData": [],
                 "Dormant": ""
-            })
-        return all_results
-    
-    """Filter companies with large balance sheets."""
+            }
+            for co in companies
+        ]
+
     suspect_companies = []
-
     for company in tqdm(companies, desc="Filtering for large balance sheets"):
-        company_name = company.get("CompanyName", "").strip()
-        company_number = company.get("CompanyNumber", "").strip()
         regulatory_status = company.get("regulatory_status", [])
-
         if regulatory_status:
             continue
 
-        ixbrl_file_path = lookup_table.get(company_number)
+        ixbrl_file_path = lookup_table.get(company.get("CompanyNumber", "").strip())
         if not ixbrl_file_path:
             continue
 
         data = extract_ixbrl_data(ixbrl_file_path)
-        
-        fin_data = data["financials"]
-        cash_value = 0
-        suspect_data = []
+        financials = data.get("financials", {})
+        cash = max(
+            (int(v.replace(",", "")) for k, v in financials.items() if "cash" in k.lower() and v.replace(",", "").isdigit()),
+            default=0
+        )
+        suspect_data = [
+            (k, float(v.replace(",", "")))
+            for k, v in financials.items()
+            if "cash" not in k.lower() and v.replace(",", "").isdigit() and float(v.replace(",", "")) > OTHER_ALERT_VALUE
+        ] if not cash_only else []
 
-        # search for suspect cash balances over CASH_ALERT_VALUE
-        # and if not run with the -cashonly option, search for any balance over OTHER_ALERT_VALUE
-        for k, v in fin_data.items():
-            try:
-                val_num = float(v.replace(",", ""))
-            except ValueError:
-                # print(f"DEBUG: {co['CompanyNumber']} - Invalid value for {k}: '{v}'")
-                continue
-
-            if "cash" in k.lower():
-                cash_value = max(int(val_num), cash_value)
-                # print(f"DEBUG: {co['CompanyNumber']} - CashBankOnHand updated from {previous_cash} to {cash_value}")
-            elif val_num > OTHER_ALERT_VALUE and not cash_only:
-                suspect_data.append((k, val_num))
-
-        if (cash_value > CASH_ALERT_VALUE) or suspect_data:
+        if cash > CASH_ALERT_VALUE or suspect_data:
             suspect_companies.append({
-                "CompanyName": company_name,
-                "CompanyNumber": company_number,
+                "CompanyName": company.get("CompanyName", "").strip(),
+                "CompanyNumber": company.get("CompanyNumber", "").strip(),
                 "SIC1": company["Data"].get("SICCode.SicText_1", ""),
                 "SIC2": company["Data"].get("SICCode.SicText_2", ""),
                 "SIC3": company["Data"].get("SICCode.SicText_3", ""),
                 "SIC4": company["Data"].get("SICCode.SicText_4", ""),
-                "Cash": cash_value,
+                "Cash": cash,
                 "SuspectData": suspect_data,
                 "Dormant": data.get("dormant", "")
             })
 
     suspect_companies.sort(key=lambda x: x["Cash"], reverse=True)
-    if cash_only:
-        print(f"Found {len(suspect_companies)} with large cash balances (I was run with the -cashonly option)")
-    else:
-        print(f"Found {len(suspect_companies)} with large balance sheets")
-        
+    filter_msg = "with large cash balances (run with -cashonly)" if cash_only else "with large balance sheets"
+    print(f"Found {len(suspect_companies)} companies {filter_msg}")
     return suspect_companies
 
 def filter_for_reg_status(companies, reg):
@@ -546,36 +505,27 @@ def create_html(suspect_companies, table_title, descriptor):
 def create_csv(suspect_companies, descriptor):
     filename = f"output/results-{descriptor}.csv"
     os.makedirs("output", exist_ok=True)
-    with open(filename, "w", encoding="utf-8", newline="") as out:
-        w = csv.writer(out)
-        # Basic header
-        hdr = ["Company Name", "Company Number", "Cash"]
-        if descriptor == "all":
-            hdr += ["Dormant"]
-            max_items = 0
-        else:
-            hdr += ["SIC1", "SIC2", "SIC3", "SIC4"]
-            max_items = max(len(c["SuspectData"]) for c in suspect_companies) if suspect_companies else 0
-            for i in range(max_items):
-                hdr += [f"Item {i+1}", f"Value {i+1}"]
-        w.writerow(hdr)
+    max_items = max((len(c.get("SuspectData", [])) for c in suspect_companies), default=0)
+    headers = ["Company Name", "Company Number", "Cash"]
+    if descriptor != "all":
+        headers += ["SIC1", "SIC2", "SIC3", "SIC4"]
+    headers += [f"Item {i+1}" for i in range(max_items)] + [f"Value {i+1}" for i in range(max_items)]
 
+    with open(filename, "w", encoding="utf-8", newline="") as out:
+        writer = csv.writer(out)
+        writer.writerow(headers)
         for co in suspect_companies:
-            row = [co["CompanyName"], co["CompanyNumber"], co["Cash"]]
-            if descriptor == "all":
-                row.append(co.get("Dormant", ""))
-            else:
-                row.extend([
-                    co.get("SIC1",""), co.get("SIC2",""),
-                    co.get("SIC3",""), co.get("SIC4","")
-                ])
-                for (item, val) in co["SuspectData"]:
-                    row += [item, val]
-                # pad out empty columns
-                needed = max_items - len(co["SuspectData"])
-                row += ["",""] * needed
-            w.writerow(row)
+            row = [
+                co["CompanyName"], co["CompanyNumber"], co["Cash"]
+            ]
+            if descriptor != "all":
+                row += [co.get(f"SIC{i}", "") for i in range(1, 5)]
+            row += [item for pair in co.get("SuspectData", []) for item in pair]
+            # Pad with empty strings if necessary
+            row += [""] * (2 * (max_items - len(co.get("SuspectData", []))))
+            writer.writerow(row)
     return filename
+
 
 def export_results(companies, html_title, descriptor):
     if not companies:
@@ -585,6 +535,7 @@ def export_results(companies, html_title, descriptor):
     csv_file = create_csv(companies, descriptor)
     
     if scp_destinations:
+        print("\nUploading:")
         for dest in scp_destinations:
             os.system(f"scp {html_file} {dest}")
             os.system(f"scp {csv_file} {dest}")
@@ -592,15 +543,16 @@ def export_results(companies, html_title, descriptor):
         print(f"Exported to:\n  {html_file}\n  {csv_file}\n")
 
 
-def indexed_search(search_type, search_terms):
-    import sqlite3
 
-    print(f"Indexed {search_type} search for '{search_terms}'...")
+def indexed_search(search_type, search_terms, search_description):
 
     conn = sqlite3.connect(INDEX_DB_FILE)
     cursor = conn.cursor()
-
     
+    cursor.execute("SELECT COUNT(*) FROM Companies")
+    total_companies = cursor.fetchone()[0]
+    print(f"Searching {total_companies:,} companies for {search_description}")
+
     if search_type == "address":
         # Use LIKE operator with wildcards for partial matching
         query = '''
@@ -639,55 +591,9 @@ def indexed_search(search_type, search_terms):
 
     conn.close()
 
-    print(f"Found {len(matched_companies)} matching companies for {search_type} search.")
+    print(f"Found {len(matched_companies):,} companies with matching {search_type}.\n")
     return matched_companies
 
-
-
-def search_for_sic_code_matches(sic_list, all_sic_codes):
-    
-    print("Searching for the following SIC codes:")
-    for code in sic_list:
-        print(f"{code}: {all_sic_codes[code]}")
-    
-    if os.path.exists(INDEX_DB_FILE):
-        companies = indexed_search("SIC", sic_list)
-        return companies
-    
-    print("You can speed this up by creating an index and running with -sicindex")
-
-    companies = []
-    total_searched = 0
-
-    sic_fields = ["SICCode.SicText_1", "SICCode.SicText_2", "SICCode.SicText_3", "SICCode.SicText_4"]
-    desc = "Finding matching SIC companies"
-    if not os.path.exists(COMPANIES_HOUSE_SNAPSHOT):
-        sys.exit(f"Error: Snapshot '{COMPANIES_HOUSE_SNAPSHOT}' not found.")
-
-    for row in read_csv_with_progress(COMPANIES_HOUSE_SNAPSHOT, desc):
-        total_searched += 1
-        if DEBUG_LIMIT and total_searched > DEBUG_LIMIT:
-            break
-        matched_codes = []
-        for field in sic_fields:
-            sic_val = row.get(field, "").strip()
-            if sic_val:
-                code = sic_val[:5]
-                if code.isdigit() and code in sic_list:
-                    matched_codes.append(code)
-        if matched_codes:
-            cnum = row.get("CompanyNumber", "").strip()
-            cname = row.get("CompanyName", "").strip()
-            if cnum:
-                companies.append({
-                    "CompanyName": cname,
-                    "CompanyNumber": cnum,
-                    "RelevantSicCodes": matched_codes,
-                    "Data": row
-                })
-
-    print(f"\nFound {len(companies)} matching SICs from {total_searched} companies")
-    return companies
 
 
 
@@ -695,11 +601,16 @@ def search_for_sic_code_matches(sic_list, all_sic_codes):
 # multithreaded function for finding ALL companies
 # different approach from standard search because it simply goes through all accounts in lookup table
 
-def find_all_cash_rich_companies_fast(lookup_table):
+def search_all_companies_for_large_cash_holdings(lookup_table, args):
+    
+    # lazy loading of large imports we only use for -all searches
     import threading
     import queue
     import concurrent.futures
     
+    if args.nofilter:
+        print("Error: cannot return all companies with no filter - that's every UK company")
+        sys.exit(1)
     
     def worker(company_number, ixbrl_file_path, result_queue, total_companies):
         if not ixbrl_file_path:
@@ -743,7 +654,7 @@ def find_all_cash_rich_companies_fast(lookup_table):
                 continue
     
     total_companies = len(lookup_table)
-    print(f"Searching all {total_companies} company accounts for cash-rich companies ...")
+    print(f"Searching all {total_companies:,} company accounts for cash-rich companies ...")
     
     cash_rich_companies = []
     result_queue = queue.Queue()
@@ -771,63 +682,49 @@ def find_all_cash_rich_companies_fast(lookup_table):
 ######################
 
 
-def search_for_address_matches(address_args):
+def build_accounts_lookup_table():
     
-    if os.path.exists(INDEX_DB_FILE):
-        companies = indexed_search("address", address_args)
-        return companies
-        
-    address_fields = [
-        "RegAddress.CareOf",
-        "RegAddress.POBox",
-        "RegAddress.AddressLine1",
-        "RegAddress.AddressLine2",
-        "RegAddress.PostTown",
-        "RegAddress.County",
-        "RegAddress.Country",
-        "RegAddress.PostCode"
-    ]
+    from collections import defaultdict  # lazy loading
     
-    address = address_args.strip()
-    print(f"Searching for address '{address}'...")
-    if not os.path.exists(COMPANIES_HOUSE_SNAPSHOT):
-        sys.exit(f"Error: Snapshot '{COMPANIES_HOUSE_SNAPSHOT}' not found.")
-
-    companies = []
-    total_searched = 0
-    desc = "Finding companies by address"
-    for row in read_csv_with_progress(COMPANIES_HOUSE_SNAPSHOT, desc):
-        total_searched += 1
-        if DEBUG_LIMIT and total_searched > DEBUG_LIMIT:
-            break
-        
-        # Aggregate all address fields into a single string
-        full_address = ' '.join([row.get(field, "").lower() for field in address_fields])
-        
-        if address.lower() in full_address:
-            cnum = row.get("CompanyNumber", "").strip()
-            cname = row.get("CompanyName", "").strip()
-            if cnum:
-                companies.append({
-                    "CompanyName": cname,
-                    "CompanyNumber": cnum,
-                    "Data": row
-                })
-
-    print(f"Found {len(companies)} from {total_searched} total lines (address search).")
-
-    return companies
-
-
+    # Remove existing lookup table if exists
+    if os.path.exists(ACCOUNTS_LOOKUP_TABLE_FILE):
+        print(f"Building lookup table; replacing existing lookup table {ACCOUNTS_LOOKUP_TABLE_FILE}...")
+        os.remove(ACCOUNTS_LOOKUP_TABLE_FILE)
+    else:
+        print(f"Building new accounts lookup table at {ACCOUNTS_LOOKUP_TABLE_FILE}...")
+    
+    company_accounts_lookup = {}
+    file_types = defaultdict(int)
+    pattern = re.compile(r".*_(\d+)_.*\.(\w+)$")
+    total_files = 0
+    for _,_,files in os.walk(DATA_DIRECTORY):
+        total_files += len(files)
+    with tqdm(total=total_files, desc="Scanning data directory") as pbar:
+        for root,_,files in os.walk(DATA_DIRECTORY):
+            for f in files:
+                m = pattern.match(f)
+                if m:
+                    cnum = m.group(1)
+                    ext = m.group(2)
+                    file_types[ext] += 1
+                    company_accounts_lookup[cnum] = os.path.join(root,f)
+                pbar.update(1)
+    if file_types.get("html",0) == 0:
+        print("No .html iXBRL found. Did you unzip them to the right place?")
+        sys.exit(1)
+    with open(ACCOUNTS_LOOKUP_TABLE_FILE,"w",encoding="utf-8") as j:
+        json.dump(company_accounts_lookup, j, indent=4)
+    print("Done building. Some files not html:", dict(file_types))
+    sys.exit(0)
 
 def create_index(csv_path=COMPANIES_HOUSE_SNAPSHOT, db_path=INDEX_DB_FILE):
-    import sqlite3
+    
     if not os.path.exists(csv_path):
         sys.exit(f"Error: CSV file '{csv_path}' not found.")
 
     # Remove existing DB if exists
     if os.path.exists(db_path):
-        print(f"Creating index and replacing existing database.")
+        print(f"Creating index; replacing existing database {db_path}")
         os.remove(db_path)
     else:
         print(f"Creating index. Database Path: {db_path}")
@@ -1028,14 +925,13 @@ Some interesting SIC codes:
 """
     print(interesting_sics)
 
-def main():
-    
+def setup_argument_parser():
     class CustomFormatter(argparse.RawTextHelpFormatter, argparse.ArgumentDefaultsHelpFormatter):
         pass
     
     parser = argparse.ArgumentParser(
         description=(
-            "taxpolicy.org.uk\n"
+            "taxpolicy.org.uk - Companies House fraudulent company accounts finder, v0.3\n\n"
             f"Find companies matching certain criteria with either "
             f"cash > £{CASH_ALERT_VALUE/1e6:.0f}m, or "
             f"other balances > £{OTHER_ALERT_VALUE/1e6:.0f}m.\n"
@@ -1047,12 +943,12 @@ def main():
     )
     
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("-sichelp", nargs="?", const="help", help="Show available SIC codes (optionally filter).")
-    group.add_argument("-sic", help="Search by SIC code(s).")
-    group.add_argument("-address", help="Search by partial address.")
-    group.add_argument("-all", action="store_true", help="Process all companies (will take 40 mins+).")
-    group.add_argument("-build", action="store_true", help="Build the accounts lookup table.")
-    group.add_argument("-index", action="store_true", help="Build an index for instant SIC/address searches. Will take a few minutes.")
+    group.add_argument("-sichelp", nargs="?", const="help", help="Show available SIC codes (optionally filter).", default=argparse.SUPPRESS)
+    group.add_argument("-sic", help="Search by SIC code(s).", default=argparse.SUPPRESS)
+    group.add_argument("-address", help="Search by partial address.", default=argparse.SUPPRESS)
+    group.add_argument("-all", action="store_true", help="Search accounts of *all* companies for high cash holdings (will take 40 mins+).", default=argparse.SUPPRESS)
+    group.add_argument("-buildlookup", action="store_true", help="Build the accounts lookup table.", default=argparse.SUPPRESS)
+    group.add_argument("-buildindex", action="store_true", help="Build an index for instant SIC/address searches. Will take a few minutes.", default=argparse.SUPPRESS)
 
     parser.add_argument("-reg", action="store_true", help="Filter out regulated companies.")
     parser.add_argument("-cashonly", action="store_true", help="Only return cash-rich companies, ignoring companies with other large balance sheet items.")
@@ -1060,126 +956,106 @@ def main():
     parser.add_argument("-nofilter", action="store_true", help="Don't filter for companies with large balance sheets - include all companies matching the SIC/address search")       
 
     parser.parse_args(args=None if sys.argv[1:] else ['-h'])
+    
+    return parser
+
+def validate_dependencies():
+
+    if not os.path.exists(ACCOUNTS_LOOKUP_TABLE_FILE):
+        sys.exit("Error: need to run with -buildlookup first, to create accounts lookup.")
+    
+    if not os.path.exists(INDEX_DB_FILE):
+        sys.exit("Error: need to run with -buildindex first, to index SIC codes and addresses.")
+
+
+def handle_sic_help(filt, all_sic_codes):
+    if filt == "help":
+        show_interesting_sics()
+    else:
+        f_lower = filt.lower()
+        print(f"\nSIC codes matching '{filt}':\n")
+        for code, desc in all_sic_codes.items():
+            if f_lower == "all" or f_lower in desc.lower():
+                print(f"{code}: {desc}")
+                
+def validate_sic_search(args, all_sic_codes):
+    search_terms = args.sic.split("-")
+    
+    invalid = [s for s in search_terms if s not in all_sic_codes]
+    if invalid:
+        sys.exit(f"Invalid SIC. Use -sichelp to show some example SICs, or search with (e.g.) -sichelp bank to show SIC codes matching the word 'bank'.")
+            
+    if len(search_terms) == 1:
+        s = search_terms[0]
+        html_title = f"Results for {s}: {all_sic_codes[s]}"
+    else:
+        html_title = "Results for " + ", ".join(search_terms)
+        
+    return search_terms, html_title
+
+
+def main():
+    
+    parser = setup_argument_parser()
 
     args = parser.parse_args()
     all_sic_codes = load_json_file(SIC_CODES_FILE, "SIC codes")
     
+    if hasattr(args, "sichelp"):
+        handle_sic_help(args.sichelp, all_sic_codes)
+        sys.exit(0)
+
     if args.cashonly and args.nofilter:
         print("Error: cannot use -cashonly and -nofilter at the same time")
         sys.exit(1)
         
-    if args.all and args.nofilter:
-        print("Error: cannot return all companies with no filter - that's every UK company")
-        sys.exit(1)
-        
-    # help wth SICs
-    if args.sichelp is not None:
-        filt = args.sichelp
-        if filt == "help":
-            show_interesting_sics()
-        else:
-            f_lower = filt.lower()
-            print(f"\nSIC codes matching '{filt}':\n")
-            for code, desc in all_sic_codes.items():
-                if f_lower == "all" or f_lower in desc.lower():
-                    print(f"{code}: {desc}")
-        sys.exit(0)
-        
     # SIC indexing mode
-    if args.index:
+    if hasattr(args, "buildindex"):
         create_index()
         sys.exit(0)
 
     # Build mode
-    if args.build:
-        import re
-        from collections import defaultdict
-        print("Creating accounts lookup table...")
-        company_accounts_lookup = {}
-        file_types = defaultdict(int)
-        pattern = re.compile(r".*_(\d+)_.*\.(\w+)$")
-        total_files = 0
-        for _,_,files in os.walk(DATA_DIRECTORY):
-            total_files += len(files)
-        with tqdm(total=total_files, desc="Scanning data directory") as pbar:
-            for root,_,files in os.walk(DATA_DIRECTORY):
-                for f in files:
-                    m = pattern.match(f)
-                    if m:
-                        cnum = m.group(1)
-                        ext = m.group(2)
-                        file_types[ext] += 1
-                        company_accounts_lookup[cnum] = os.path.join(root,f)
-                    pbar.update(1)
-        if file_types.get("html",0) == 0:
-            print("No .html iXBRL found. Did you unzip them to the right place?")
-            sys.exit(1)
-        with open(ACCOUNTS_LOOKUP_TABLE_FILE,"w",encoding="utf-8") as j:
-            json.dump(company_accounts_lookup, j, indent=4)
-        print("Done building. Some files not html:", dict(file_types))
+    if hasattr(args, "buildlookup"):
+        build_accounts_lookup_table()
         sys.exit(0)
-
-    # If not building or listing, we do an actual search.
-    if not os.path.exists(ACCOUNTS_LOOKUP_TABLE_FILE):
-        sys.exit("Error: need to run with -build first, to create accounts lookup.")
+        
+    validate_dependencies()
 
     lookup_table = load_json_file(ACCOUNTS_LOOKUP_TABLE_FILE, "Accounts lookup table")
 
     # Possibly limit the size for debugging
     if DEBUG_LIMIT:
-        # If -all, we'll limit the dictionary
-        # If -sic/-address, we'll eventually limit the search results anyway
+        print(f"\n***\nWARNING: debugging, only searching first {DEBUG_LIMIT} companies!\n***\n")
         lookup_table = dict(list(lookup_table.items())[:DEBUG_LIMIT])
 
-    if args.all:
-
-        all_companies = []
-        for cnum in lookup_table.keys():
-            all_companies.append({
-                "CompanyNumber": cnum,
-                "CompanyName": "",  # will be overwritten by iXBRL name if found
-                "Data": {}  # no CSV data for -all
-            })
-
-        results = find_all_cash_rich_companies_fast(lookup_table)
-        export_results(results, f"All companies with cash > £{CASH_ALERT_VALUE/1e6:.0f}m", "all")
-
-    elif args.sic is not None:
-        sic_help = f"Invalid SIC. Use -sichelp to show some example SICs, or search with (e.g.) -sichelp bank to show SIC codes matching the word 'bank'."
-        
-        if not args.sic:
-            sys.exit(sic_help)
-            
-        sic_list = args.sic.split("-")
-        
-        invalid = [s for s in sic_list if s not in all_sic_codes]
-        if invalid:
-            sys.exit(sic_help)
-            
-        companies = search_for_sic_code_matches(sic_list, all_sic_codes)
-        companies = filter_for_large_companies(companies, lookup_table, cash_only=args.cashonly, nofilter=args.nofilter)
-        companies = filter_for_reg_status(companies, args.reg)
+    if hasattr(args, "all"):
+        companies = search_all_companies_for_large_cash_holdings(lookup_table, args)
         companies = filter_for_dormant(companies, args.dormantonly)
+        export_results(companies, f"All companies with cash > £{CASH_ALERT_VALUE/1e6:.0f}m", "all")
 
-        if len(sic_list) == 1:
-            s = sic_list[0]
-            html_title = f"Results for {s}: {all_sic_codes[s]}"
-        else:
-            html_title = "Results for " + ", ".join(sic_list)
-
-        descriptor = "-".join(sic_list)
-        export_results(companies, html_title, descriptor)
-
-    elif args.address:
+    # prepare SIC search
+    elif hasattr(args, "sic"):
         
-        companies = search_for_address_matches(args.address)
-        companies = filter_for_large_companies(companies, lookup_table, cash_only=args.cashonly, nofilter=args.nofilter)
-        companies = filter_for_reg_status(companies, args.reg)
-        companies = filter_for_dormant(companies, args.dormantonly)
+        search_terms, html_title = validate_sic_search(args, all_sic_codes)
+        descriptor = "-".join(search_terms)
+        search_type = "SIC"
+        search_description = "SIC codes " + ", ".join(f"{code}: {all_sic_codes[code]}" for code in search_terms)
+
+    # prepare address search
+    elif hasattr(args, "address"):
         
         descriptor = args.address.lower().replace(" ", "_")
-        export_results(companies, f"Large companies at '{args.address}'", descriptor)
-
+        html_title = f"Large companies at '{args.address}'"
+        search_terms, search_type, search_description = args.address, "address", f"addresses containing '{args.address}' (case insensitive)"
+        
+    # do searching and filtering for address/SIC search
+    if hasattr(args, "address") or hasattr(args, "sic"):
+        
+        companies = indexed_search(search_type, search_terms, search_description)    
+        companies = filter_for_large_companies(companies, lookup_table, cash_only=args.cashonly, nofilter=args.nofilter)
+        companies = filter_for_reg_status(companies, args.reg)
+        companies = filter_for_dormant(companies, args.dormantonly)
+        export_results(companies, html_title, descriptor)
 
 if __name__ == "__main__":
     main()
