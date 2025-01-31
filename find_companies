@@ -948,7 +948,7 @@ def setup_argument_parser():
     group.add_argument("-address", help="Search by partial address.", default=argparse.SUPPRESS)
     group.add_argument("-all", action="store_true", help="Search accounts of *all* companies for high cash holdings (will take 40 mins+).", default=argparse.SUPPRESS)
     group.add_argument("-buildlookup", action="store_true", help="Build the accounts lookup table.", default=argparse.SUPPRESS)
-    group.add_argument("-buildindex", action="store_true", help="Build an index for instant SIC/address searches. Will take a few minutes.", default=argparse.SUPPRESS)
+    group.add_argument("-buildindex", action="store_true", help="Build an index for SIC/address searches. Will take a few minutes.", default=argparse.SUPPRESS)
 
     parser.add_argument("-reg", action="store_true", help="Filter out regulated companies.")
     parser.add_argument("-cashonly", action="store_true", help="Only return cash-rich companies, ignoring companies with other large balance sheet items.")
