@@ -1,4 +1,15 @@
-# script for finding companies with false accounts on Companies House
+# Fake Accounts Finder
+
+(c) Dan Neidle of Tax Policy Associates Ltd, 2025
+Licensed under the GNU General Public License, version 2
+
+This script is intended to find potentially fraudulent accounts filed on Companies House. It uses a very simple methodology to do this - see our article at https://taxpolicy.org.uk/2025/01/31/the-trillion-pound-fake-missed-by-companies-house/
+
+The consequence is that the script will:
+- only identify a particular kind of fraudulent company accounts. Failing to flag a company's accounts as suspicious in NO WAY means the accounts are kosher.
+- shortlist accounts that are worthy of investigation. The actual accounts should always be reviewed before reaching any conclusion. In some cases (£100m+ cash balances in a "dormant" company that has no other balance sheet entries) one can then be confident the accounts are fraudulent. In other cases, one cannot be.
+
+It is therefore wise to be *very* cautious about drawing any conclusions about a company when using this script. It could be legally hazardous to publicly accuse a copmany of fraud wihout extremely good reason (and, sometimes, it can be legally hazardous even if you have extremely good reasons).
 
 These instructions are primarily for Linux. They should work on macOS, and can be adapted for Windows (see the notes below). You will need some familiarity with the command line to proceed.
 
@@ -222,7 +233,3 @@ After a search, the script saves results to:
 - output/results-<descriptor>.csv (raw data for your own analysis)
 
 If you configured scp_destinations in companies_house_settings.py, these files will also be uploaded automatically.
-
-
-(c) Dan Neidle of Tax Policy Associates Ltd, 2025
-Licensed under the GNU General Public License, version 2
