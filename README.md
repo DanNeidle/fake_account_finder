@@ -7,7 +7,7 @@ This script is intended to find potentially fraudulent accounts filed on Compani
 
 The consequence is that the script will:
 - only identify a particular kind of fraudulent company accounts. Failing to flag a company's accounts as suspicious in NO WAY means the accounts are kosher.
-- shortlist accounts that are worthy of investigation. The actual accounts should always be reviewed before reaching any conclusion. In some cases (£100m+ cash balances in a "dormant" company that has no other balance sheet entries) one can then be confident the accounts are fraudulent. In other cases, one cannot be.
+- shortlist accounts that are worthy of investigation. The actual accounts should *always* be reviewed before reaching any conclusion. In some cases (£100m+ cash balances in a "dormant" company that has no other balance sheet entries) one can be reasonably confident the accounts are fraudulent. In other cases, one cannot be, and further investigation would be required.
 
 It is therefore wise to be *very* cautious about drawing any conclusions about a company when using this script. It could be legally hazardous to publicly accuse a copmany of fraud wihout extremely good reason (and, sometimes, it can be legally hazardous even if you have extremely good reasons).
 
@@ -233,3 +233,17 @@ After a search, the script saves results to:
 - output/results-<descriptor>.csv (raw data for your own analysis)
 
 If you configured scp_destinations in companies_house_settings.py, these files will also be uploaded automatically.
+
+## 8. Notes for Windows
+I have no Windows experience but I believe the script will work, with a few changes in setup:
+- Use del *.zip instead of rm *.zip.
+- Activate your virtual environment with venv\Scripts\activate.
+- Some commands (like chmod +x) are not necessary or work differently on Windows. You may need to run the script via python find_companies ... instead of ./find_companies
+
+## 9. Final thoughts
+
+Make sure you have adequate disk space and a reasonably powerful and stable machine — parsing millions of account files is demanding.
+
+If you want to do more advanced filtering or custom analytics, feel free to adapt the script’s logic or post-process the output CSV. It would be easy to adapt the script to, e.g. look at several years' of accounts (simultaneously or optionally), of course at the price of using more disk storage and likely slowing things down.
+
+Unfortunately, I can't support anyone installing or using the script, but I'd be fascinated to see what uses people have for it. Do please drop ne a line - dan ATSIGN taxpolicy.org.uk
