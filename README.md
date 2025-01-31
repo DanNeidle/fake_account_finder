@@ -1,7 +1,6 @@
 # script for finding companies with false accounts on Companies House
 
-These instructions are for Linux. They should work on Mac. They, and the script, may need some adaptation to work on Windows.
-You will need some experience with the command line.
+These instructions are primarily for Linux. They should work on macOS, and can be adapted for Windows (see the notes below). You will need some familiarity with the command line to proceed.
 
 ---
 
@@ -28,11 +27,18 @@ You will need some experience with the command line.
     pip install -r requirements.txt
     ```
 
+5. Make the script executable:
+   ```bash
+    chmod +x find_companies
+    ```
+
 ---
 
 ## 2. Download Required Data
 
 ### Companies House Data
+
+Important: You’ll need a significant amount of free disk space (around 500 GB) to download, unzip, and handle the full Companies House accounts data. After setup, when you've deleted the original zip files, it should settle at about 330 GB.
 
 1. Create a directory for Companies House data and for output data:
     ```bash
@@ -67,7 +73,7 @@ You will need some experience with the command line.
 
 ---
 
-## 4. Obtain an FCA API Key (Optional)
+## 3. Obtain an FCA API Key (Optional)
 
 If you wish to filter for regulatory status, you need a (free) API key from the Financial Conduct Authority (FCA):
 
@@ -76,9 +82,11 @@ If you wish to filter for regulatory status, you need a (free) API key from the 
 
 2. Follow the instructions and obtain an API key.
 
+If you don’t need to filter out regulated entities (e.g., you only want to see all companies meeting your other criteria), you can skip this step.
+
 ---
 
-## 5. Configure settings
+## 4. Configure settings
 
 1. Rename the `companies_house_settings_example.py` to `companies_house_settings.py`.
    ```bash
@@ -87,36 +95,45 @@ If you wish to filter for regulatory status, you need a (free) API key from the 
 
 2. Edit the file as follows:
 
-   `companies_house_snapshot_file` should be the same filename as the CSV file you downloaded from Companies House
-   Complete `fca_user` and `fca_api_key`, if you want to screen for unregulated companies and have obtained an api key. Otherwise just leave the defaults
-   `scp_destinations` is a list of destinations to SCP the output HTML and CSV files when the script completes. For me that's convenient. Leave the list blank and it will be ignored.
+   - `companies_house_snapshot_file` should be the same filename as the CSV file you downloaded from Companies House
+   - Complete `fca_user` and `fca_api_key`, if you want to screen for unregulated companies and have obtained an api key. Otherwise just leave as blanks (but don't delete)
+   - `scp_destinations` is a list of destinations to SCP the output HTML and CSV files when the script completes. For me that's convenient. Leave the list blank and it will be ignored.
+   - CASH_ALERT_VALUE and OTHER_ALERT_VALUE: thresholds for “large balances.” Defaults are 10 million and 100 million.
 
 ---
 
-## 6. Build indexes
+## 5. Build indexes
+
+Before running searches, you must build two indexes that mean the searches very quickly:
 
 1. Check the script is working:
     ```bash
     ./find_companiew
     ```
 
-    You should see a help page.
+    If you see help information, you’re good to proceed.
 
-2. Create a lookup table that indexes all the account files:
+2. Create a lookup table that links the 300GB of account files to the relevant company number:
     ```bash
     ./find_companiew -buildlookup
     ```
+
+    This scans the companies_house_data/ directory and creates a JSON file listing each company’s iXBRL file path.
 
 2. Create the index for sic/address searches:
     ```bash
     ./find_companies -buildindex
     ```
 
+    This reads the big CSV snapshot and creates a SQLite database for quick lookups by SIC code or address.
+
 ---
 
-## 7. Example usage
+## 6. Example usage
 
-### Lookup SIC Codes
+Below are typical ways to run the script once everything is set up.
+
+### Searching for SIC codes
 
 To list the most likely suspect SIC codes:
     ```bash
@@ -128,9 +145,18 @@ Alternatively, for a list of all SIC codes:
     ./find_companies -sichelp all
     ```
 
-More usefully, to search e.g. for the SIC codes for banks
+More usefully, to search for a SIC code containing a keyword, like "bank"
     ```bash
     ./find_companies -sichelp bank
+    ```
+
+This will output:
+
+    ```output
+    SIC codes matching 'bank':
+    
+    64110: Central banking
+    64191: Banks
     ```
 
 ### Example SIC code searches
@@ -182,13 +208,20 @@ As with SIC searches, you can combine with -cashonly, -dormant-only, -nofilter, 
 
 ### Search every UK company for large cash balances
 
-This will take a fairly long time (40 minutes on my PC):
+This will take a fairly long time (40 minutes on my PC), because it is parsing the 3 million account files individually:
 ```bash
 ./find_companies -all
 ```
 
 You can combine with -dormant to only return dormant companies.
 
+## 7. Output files
+After a search, the script saves results to:
+
+- output/results-<descriptor>.html (nicely formatted DataTables view)
+- output/results-<descriptor>.csv (raw data for your own analysis)
+
+If you configured scp_destinations in companies_house_settings.py, these files will also be uploaded automatically.
 
 
 (c) Dan Neidle of Tax Policy Associates Ltd, 2025
