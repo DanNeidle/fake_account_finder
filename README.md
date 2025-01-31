@@ -118,76 +118,76 @@ If you wish to filter for regulatory status, you need a (free) API key from the 
 
 ### Lookup SIC Codes
 
-1. To list the most likely suspect SIC codes:
+To list the most likely suspect SIC codes:
     ```bash
     ./find_companies -sichelp
     ```
 
-2. Alternatively, for a list of all SIC codes:
+Alternatively, for a list of all SIC codes:
     ```bash
     ./find_companies -sichelp all
     ```
 
-3. More usefully, to search e.g. for the SIC codes for banks
+More usefully, to search e.g. for the SIC codes for banks
     ```bash
     ./find_companies -sichelp bank
     ```
 
 ### Example SIC code searches
     
-1. To find all companies with a bank SIC code with cash holdings of £10m+ or other balance sheet entries of £100m+:
-    ```bash
-    ./find_companies -sic 64191
-    ```
+To find all companies with a bank SIC code with cash holdings of £10m+ or other balance sheet entries of £100m+:
+```bash
+./find_companies -sic 64191
+```
 
-    If all goes well, you should see something like:
-    ```output
-    Searching 5,637,210 companies for SIC codes 64191: Banks
-    Found 1,145 companies with matching SIC.
+If all goes well, you should see something like:
+```output
+Searching 5,637,210 companies for SIC codes 64191: Banks
+Found 1,145 companies with matching SIC.
 
-    Filtering for large balance sheets: 100%|██████████████████████████████████████████████████████████████████████| 1145/1145 [00:00<00:00, 3025.04it/s]
-    Found 18 companies with large balance sheets
-    ```
+Filtering for large balance sheets: 100%|██████████████████████████████████████████████████████████████████████| 1145/1145 [00:00<00:00, 3025.04it/s]
+Found 18 companies with large balance sheets
+```
 
-    This will save the results to a CSV file in the output directory, together with a nicely formatted HTML table.
+This will save the results to a CSV file in the output directory, together with a nicely formatted HTML table.
 
-    Some of those entities will be regulated; it makes sense to screen them out (as fraudsters are unlikely to be FCA-regulated). This will be a little slower, because we have to query the FCA register API:
-    ```bash
-    ./find_companies -sic 64191 -reg
-    ```
+Some of those entities will be regulated; it makes sense to screen them out (as fraudsters are unlikely to be FCA-regulated). This will be a little slower, because we have to query the FCA register API:
+```bash
+./find_companies -sic 64191 -reg
+```
 
-    Alternatively, to limit the search to companies filing as dormant, with cash holdings of £10m+ (but ignoring companies with other large balance sheet entries):
-    ```bash
-    ./find_companies -sic 64191 -cashonly -dormantonly
-    ```
-    
-    Or if you want to return all companies, without filtering for balance sheet:
-    ```bash
-    ./find_companies -sic 64191 -nofilter
-    ``` 
+Alternatively, to limit the search to companies filing as dormant, with cash holdings of £10m+ (but ignoring companies with other large balance sheet entries):
+```bash
+./find_companies -sic 64191 -cashonly -dormantonly
+```
 
-   To search for multiple SIC codes simultaneously, separate them with hyphens:
-    ```bash
-    ./find_companies -sic 64110-64120
-    ```
+Or if you want to return all companies, without filtering for balance sheet:
+```bash
+./find_companies -sic 64191 -nofilter
+``` 
+
+To search for multiple SIC codes simultaneously, separate them with hyphens:
+```bash
+./find_companies -sic 64110-64120
+```
 
 ### Search by Registered Office Address
 
-1.  You can, alternatively, search by a registered office address. Make sure to include quotes. For example:
-    ```bash
-    ./find_companies -address "124 city road"
-    ```
+You can, alternatively, search by a registered office address. Make sure to include quotes. For example:
+```bash
+./find_companies -address "124 city road"
+```
 
-    As with SIC searches, you can combine with -cashonly, -dormant-only, -nofilter, or -reg. 
-    
+As with SIC searches, you can combine with -cashonly, -dormant-only, -nofilter, or -reg. 
+
 ### Search every UK company for large cash balances
 
-1.    This will take a fairly long time (40 minutes on my PC):
-    ```bash
-    ./find_companies -all
-    ```
+This will take a fairly long time (40 minutes on my PC):
+```bash
+./find_companies -all
+```
 
-  You can combine with -dormant to only return dormant companies.
+You can combine with -dormant to only return dormant companies.
 
 
 
