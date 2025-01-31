@@ -170,12 +170,12 @@ def search_fca_register(firm_name, progress_info, max_retries=3, backoff_factor=
     wait_time = 1
     for attempt in range(1, max_retries + 2):
         try:
-            print(f"{progress_info} '{firm_name}' (attempt {attempt}/{max_retries+1})")
+            print(f"{progress_info} '{firm_name}'" + (f"(attempt {attempt}/{max_retries+1})" if attempt > 1 else ""))
             r = requests.get(url, params=params, headers=headers, timeout=10)
             if r.status_code == 200:
                 data = r.json().get("Data")
                 if isinstance(data, list):
-                    print(f"Found {len(data)} record(s).")
+                    # print(f"Found {len(data)} record(s).")
                     return data
                 else:
                     # print(f"No data found.")
@@ -225,6 +225,7 @@ def add_reg_status(companies):
             norm_entry_name = normalize_name(entry_name)
             if norm_entry_name == norm_cname:
                 pruned_status.append(entry)
+                print(f"{cname} is a regulated firm")
             else:
                 pass
                 # print(f"{cname}: Deleting regulatory entry '{entry_name}' as it does not match normalized name.")
@@ -1053,8 +1054,8 @@ def main():
         
         companies = indexed_search(search_type, search_terms, search_description)    
         companies = filter_for_large_companies(companies, lookup_table, cash_only=args.cashonly, nofilter=args.nofilter)
-        companies = filter_for_reg_status(companies, args.reg)
         companies = filter_for_dormant(companies, args.dormantonly)
+        companies = filter_for_reg_status(companies, args.reg)
         export_results(companies, html_title, descriptor)
 
 if __name__ == "__main__":
