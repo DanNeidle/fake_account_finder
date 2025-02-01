@@ -535,7 +535,6 @@ def export_results(companies, html_title, descriptor, run_scp = True):
     
     # sanitise filename
     descriptor = re.sub(r'[\\\/:*?"<>|]', '_', descriptor)
-    
     html_file = create_html(companies, html_title, descriptor)
     csv_file = create_csv(companies, descriptor)
     
@@ -1070,6 +1069,7 @@ def main():
     if hasattr(args, "all"):
         companies = search_all_companies_for_large_cash_holdings(lookup_table, args)
         companies = filter_for_dormant(companies, args.dormantonly)
+        companies.sort(key=lambda c: c["Cash"], reverse=True)
         export_results(companies, f"All companies with cash > £{CASH_ALERT_VALUE/1e6:.0f}m", f"all{'-dormant' if args.dormantonly else ''}")
         
     elif hasattr(args, "runbatchall"):
