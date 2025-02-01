@@ -528,14 +528,14 @@ def create_csv(suspect_companies, descriptor):
     return filename
 
 
-def export_results(companies, html_title, descriptor):
+def export_results(companies, html_title, descriptor, run_scp = True):
     if not companies:
         print("\nNo results - nothing to export.")
         return
     html_file = create_html(companies, html_title, descriptor)
     csv_file = create_csv(companies, descriptor)
     
-    if scp_destinations:
+    if scp_destinations and run_scp:
         print("\nUploading:")
         for dest in scp_destinations:
             os.system(f"scp {html_file} {dest}")
@@ -892,7 +892,7 @@ def filter_for_dormant(companies, dormant_arg):
         return companies
     
 
-def show_interesting_sics():
+def return_interesting_sics():
     interesting_sics = """
 Some interesting SIC codes:
 
@@ -925,7 +925,38 @@ Some interesting SIC codes:
     Run with -sichelp TEXT to see all the SIC codes matching TEXT
     or run with -sichelp ALL to see every SIC code.
 """
-    print(interesting_sics)
+    return interesting_sics
+
+
+# runs a batch of all SICs for website
+# not very efficient as doesn't cache FCA search results, when one company could appear four times    
+def runbatch(target, lookup_table, all_sic_codes):
+    print(f"Running batch for {target}")
+    iter = 0
+    start = time.time()
+    
+    for SIC in target:
+        search_terms = [SIC]
+        for cashonly in [True, False]:
+            for dormant in [True, False]:
+                
+                iter += 1
+                descriptor = f"{SIC}_{all_sic_codes[SIC].replace(' ', '_')}{'-dormants' if dormant else ''}{'-cashonly' if cashonly else ''}"
+                html_title = f"{SIC}: {all_sic_codes[SIC]}{', dormants' if dormant else ''}{', cash-rich' if cashonly else ''}"
+                search_description = f"{iter}/{len(target) * 4}- {html_title}"
+                print(descriptor)
+                print(html_title)
+                print(search_description)
+                time.sleep(1)
+                
+                companies = indexed_search("SIC", search_terms, search_description)    
+                companies = filter_for_large_companies(companies, lookup_table, cash_only=cashonly, nofilter=False)
+                companies = filter_for_dormant(companies, dormant)
+                companies = filter_for_reg_status(companies, True)
+                
+                export_results(companies, html_title, descriptor, run_scp=False)
+                
+    print(f"\nCompleted batch run - took {int(start - time.time())}s")
 
 def setup_argument_parser():
     class CustomFormatter(argparse.RawTextHelpFormatter, argparse.ArgumentDefaultsHelpFormatter):
@@ -951,6 +982,8 @@ def setup_argument_parser():
     group.add_argument("-all", action="store_true", help="Search accounts of *all* companies for high cash holdings (will take 40 mins+).", default=argparse.SUPPRESS)
     group.add_argument("-buildlookup", action="store_true", help="Build the accounts lookup table.", default=argparse.SUPPRESS)
     group.add_argument("-buildindex", action="store_true", help="Build an index for SIC/address searches. Will take a few minutes.", default=argparse.SUPPRESS)
+    group.add_argument("-runbatchinteresting", action="store_true", help="Run on all 'interesting' SICs", default=argparse.SUPPRESS)
+    group.add_argument("-runbatchall", action="store_true", help="Run on all SICs", default=argparse.SUPPRESS)
 
     parser.add_argument("-reg", action="store_true", help="Filter out regulated companies.")
     parser.add_argument("-cashonly", action="store_true", help="Only return cash-rich companies, ignoring companies with other large balance sheet items.")
@@ -972,7 +1005,7 @@ def validate_dependencies():
 
 def handle_sic_help(filt, all_sic_codes):
     if filt == "help":
-        show_interesting_sics()
+        print(return_interesting_sics())
     else:
         f_lower = filt.lower()
         print(f"\nSIC codes matching '{filt}':\n")
@@ -1007,17 +1040,17 @@ def main():
         handle_sic_help(args.sichelp, all_sic_codes)
         sys.exit(0)
 
-    if args.cashonly and args.nofilter:
+    elif args.cashonly and args.nofilter:
         print("Error: cannot use -cashonly and -nofilter at the same time")
         sys.exit(1)
         
     # SIC indexing mode
-    if hasattr(args, "buildindex"):
+    elif hasattr(args, "buildindex"):
         create_index()
         sys.exit(0)
 
     # Build mode
-    if hasattr(args, "buildlookup"):
+    elif hasattr(args, "buildlookup"):
         build_accounts_lookup_table()
         sys.exit(0)
         
@@ -1033,7 +1066,17 @@ def main():
     if hasattr(args, "all"):
         companies = search_all_companies_for_large_cash_holdings(lookup_table, args)
         companies = filter_for_dormant(companies, args.dormantonly)
-        export_results(companies, f"All companies with cash > £{CASH_ALERT_VALUE/1e6:.0f}m", "all")
+        export_results(companies, f"All companies with cash > £{CASH_ALERT_VALUE/1e6:.0f}m", f"all{'-dormant' if args.dormantonly else ''}")
+        
+    elif hasattr(args, "runbatchall"):
+        all_sics = list(all_sic_codes.keys())
+        runbatch(all_sics, lookup_table, all_sic_codes)
+        sys.exit(0)
+        
+    elif hasattr(args, "runbatchinteresting"):
+        interesting_sics = re.findall(r'\b\d{5}\b', return_interesting_sics())
+        runbatch(interesting_sics, lookup_table, all_sic_codes)
+        sys.exit(0)
 
     # prepare SIC search
     elif hasattr(args, "sic"):
@@ -1062,3 +1105,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
