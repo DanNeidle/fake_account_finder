@@ -917,6 +917,7 @@ Some interesting SIC codes:
     65201: Life reinsurance
     65202: Non-life reinsurance
     65300: Pension funding
+    66110: Administration of financial markets
     66120: Security and commodity contracts dealing activities
     66220: Activities of insurance agents and brokers
     66300: Fund management activities
@@ -1056,6 +1057,7 @@ def main():
         companies = filter_for_large_companies(companies, lookup_table, cash_only=args.cashonly, nofilter=args.nofilter)
         companies = filter_for_dormant(companies, args.dormantonly)
         companies = filter_for_reg_status(companies, args.reg)
+        descriptor = f"{descriptor}{'-dormants' if args.dormantonly else ''}{'-cashonly' if args.cashonly else ''}{'-nofilter' if args.nofilter else ''}{'-unregs' if args.reg else ''}"
         export_results(companies, html_title, descriptor)
 
 if __name__ == "__main__":
