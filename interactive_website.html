@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Report Viewer</title>
+  <!-- Load the Poppins font from Google Fonts -->
+  <link href="https://fonts.googleapis.com/css?family=Poppins:400,500,600&display=swap" rel="stylesheet">
+  <style>
+    #contentWrapper {
+      width: 100%;
+      max-width: 100%;
+      overflow-x: auto; /* Allows horizontal scrolling if content is wider */
+    }
+    #contentWrapper img,
+    #contentWrapper table,
+    #contentWrapper iframe,
+    #contentWrapper div {
+      max-width: 100%;
+      box-sizing: border-box;
+      height: auto;
+    }
+    body {
+      font-family: 'Poppins', sans-serif;
+      background: #fff;
+      margin: 20px;
+      color: #333;
+    }
+    .container {
+      max-width: 1200px;
+      margin: auto;
+    }
+    .controls {
+      background-color: #D3D3D3;
+      padding: 15px;
+      border-radius: 5px;
+      margin-bottom: 20px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 15px;
+    }
+    .controls input[type="search"] {
+      margin-right: 10px;
+      padding: 8px;
+      font-size: 16px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      width: 300px;
+    }
+    .controls input[type="checkbox"] {
+      margin-right: 5px;
+    }
+    .controls label {
+      margin-right: 20px;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    .action-bar {
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+    .download-btn, .fullscreen-btn {
+      display: inline-block;
+      padding: 10px 15px;
+      background-color: #1133AF;
+      color: #fff !important;
+      text-decoration: none;
+      border: none;
+      border-radius: 4px;
+      font-size: 16px;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+    }
+    .download-btn:hover, .fullscreen-btn:hover {
+      background-color: #0d2a8a;
+    }
+    .controls button:disabled {
+      background-color: #999;
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    #contentWrapper {
+      border: 2px solid #1133AF;
+      border-radius: 5px;
+      padding: 15px;
+      min-height: 400px;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    /* Table styling for report list */
+    #reportTableContainer {
+      max-height: 400px; /* Adjust based on your row height: roughly 10 rows */
+      overflow-y: auto;
+      border: 1px solid #ccc; /* Optional: add a border around the table container */
+      margin-top: 10px;
+    }
+    #reportTableContainer table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    #reportTableContainer th, 
+    #reportTableContainer td {
+      padding: 8px 12px;
+      border: 1px solid #ccc;
+      text-align: left;
+    }
+    #reportTableContainer th {
+      background-color: #f4f4f4;
+      cursor: pointer;
+    }
+    #reportTableContainer tr.selected {
+      background-color: #d0e6ff;
+    }
+    #reportTableContainer tr:hover {
+      background-color: #f0f0f0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Controls: Searchable input, checkboxes, and action buttons -->
+    <div class="controls">
+      <input type="search" id="reportSearch" placeholder="Search reports..." autocomplete="off">
+      <label>
+        <input type="checkbox" id="checkboxDormant"> Dormant
+      </label>
+      <label>
+        <input type="checkbox" id="checkboxCash"> Cash Rich Only
+      </label>
+      
+      <button class="fullscreen-btn" id="fullscreenBtn" disabled>View full Screen</button>
+      <a href="#" class="download-btn" id="downloadCSV" target="_blank" style="pointer-events: none; opacity: 0.5;">Export data</a>
+    </div>
+    
+
+    <!-- Container for the report table -->
+    <div id="reportTableContainer">
+      <!-- Table will be populated via JavaScript -->
+    </div>
+
+    <!-- Content Display Area -->
+    <div id="contentWrapper">
+      <div id="content">Please select a report from the list above.</div>
+    </div>
+  </div>
+
+  <script>
+    // --- Configuration ---
+    const assetsPath = '/wp-content/assets/fake_accounts/';
+    let sicReports = [];
+
+    // Fetch the JSON file and build the table once data is available
+    fetch(assetsPath + 'interactive_website_sics.json')
+      .then(response => response.json())
+      .then(data => {
+        sicReports = data;
+        populateSICTable();
+      })
+      .catch(error => console.error('Error loading SIC codes JSON:', error));
+
+    // Build the table of reports from the JSON data
+    function populateSICTable() {
+      const container = document.getElementById('reportTableContainer');
+      container.innerHTML = ''; // clear any existing content
+
+      // Create table element
+      const table = document.createElement('table');
+      table.id = 'reportTable';
+
+      // Create table header
+      const thead = document.createElement('thead');
+      const headerRow = document.createElement('tr');
+
+      const descHeader = document.createElement('th');
+      descHeader.textContent = 'Description';
+
+      const countHeader = document.createElement('th');
+      countHeader.textContent = 'Count';
+      // When the Count header is clicked, sort the table rows by count descending.
+      countHeader.addEventListener('click', () => {
+        sortTableByCount();
+      });
+
+      headerRow.appendChild(descHeader);
+      headerRow.appendChild(countHeader);
+      thead.appendChild(headerRow);
+      table.appendChild(thead);
+
+      // Create table body
+      const tbody = document.createElement('tbody');
+      sicReports.forEach(item => {
+        const [desc, fileBase, count] = item;
+        const row = document.createElement('tr');
+        row.dataset.file = fileBase;
+        row.dataset.count = count;
+
+        // When a row is clicked, highlight it and load its report.
+        row.addEventListener('click', () => {
+          // Remove any existing selection highlight
+          const allRows = table.querySelectorAll('tbody tr');
+          allRows.forEach(r => r.classList.remove('selected'));
+          row.classList.add('selected');
+          // Update the search box text (optional)
+          document.getElementById('reportSearch').value = desc + ' - ' + count;
+          loadReportFromRow(row);
+        });
+
+        const tdDesc = document.createElement('td');
+        tdDesc.textContent = desc;
+        const tdCount = document.createElement('td');
+        tdCount.textContent = count;
+
+        row.appendChild(tdDesc);
+        row.appendChild(tdCount);
+        tbody.appendChild(row);
+      });
+      table.appendChild(tbody);
+      container.appendChild(table);
+    }
+
+    // Function to sort the table rows by count (descending)
+    function sortTableByCount() {
+      const table = document.getElementById('reportTable');
+      const tbody = table.querySelector('tbody');
+      const rows = Array.from(tbody.querySelectorAll('tr'));
+      rows.sort((a, b) => Number(b.dataset.count) - Number(a.dataset.count));
+      tbody.innerHTML = '';
+      rows.forEach(row => tbody.appendChild(row));
+    }
+
+    // Filter table rows as user types in the search input
+    document.getElementById('reportSearch').addEventListener('input', () => {
+      const filter = document.getElementById('reportSearch').value.toLowerCase();
+      const table = document.getElementById('reportTable');
+      const rows = table.querySelectorAll('tbody tr');
+      rows.forEach(row => {
+        const desc = row.cells[0].textContent.toLowerCase();
+        // If the description contains the filter text, display the row; otherwise, hide it.
+        row.style.display = desc.indexOf(filter) > -1 ? '' : 'none';
+      });
+    });
+
+    // --- DOM Elements for report loading ---
+    const checkboxDormant = document.getElementById('checkboxDormant');
+    const checkboxCash = document.getElementById('checkboxCash');
+    const contentDiv = document.getElementById('content');
+    const downloadCSV = document.getElementById('downloadCSV');
+    const fullscreenBtn = document.getElementById('fullscreenBtn');
+
+    // When checkboxes change, reload the currently selected report (if any)
+    checkboxDormant.addEventListener('change', () => {
+      const selected = document.querySelector('#reportTableContainer tr.selected');
+      if(selected) {
+        loadReportFromRow(selected);
+      }
+    });
+    checkboxCash.addEventListener('change', () => {
+      const selected = document.querySelector('#reportTableContainer tr.selected');
+      if(selected) {
+        loadReportFromRow(selected);
+      }
+    });
+
+    // Load the report corresponding to the clicked row.
+    function loadReportFromRow(row) {
+      const fileBase = row.dataset.file;
+      let suffix = '';
+      if (checkboxDormant.checked && checkboxCash.checked) {
+        suffix = '-dormants-cashonly';
+      } else if (checkboxDormant.checked) {
+        suffix = '-dormants';
+      } else if (checkboxCash.checked) {
+        suffix = '-cashonly';
+      }
+      const finalBase = fileBase + suffix;
+
+      const htmlFile = assetsPath + finalBase + '.html';
+      const csvFile = assetsPath + finalBase + '.csv';
+
+      // Disable buttons until a valid report is loaded
+      fullscreenBtn.disabled = true;
+      downloadCSV.style.pointerEvents = 'none';
+      downloadCSV.style.opacity = '0.5';
+
+      // Update the CSV download link (will be enabled upon successful load)
+      downloadCSV.href = csvFile;
+
+      // Set up the Full Screen button to open the HTML file in a new tab (will be enabled upon successful load)
+      fullscreenBtn.onclick = () => window.open(htmlFile, '_blank');
+
+      // Load the HTML file content via Fetch API
+      fetch(htmlFile)
+        .then(response => {
+          if (!response.ok) {
+            throw new Error('File not found: ' + htmlFile);
+          }
+          return response.text();
+        })
+        .then(data => {
+          contentDiv.innerHTML = data;
+          // Enable buttons now that a valid HTML is loaded
+          fullscreenBtn.disabled = false;
+          downloadCSV.style.pointerEvents = 'auto';
+          downloadCSV.style.opacity = '1';
+        })
+        .catch(error => {
+          contentDiv.innerHTML = '<p style="color:red;">Error loading the report. Please check your selection.</p>';
+          // Ensure buttons remain disabled in case of error
+          fullscreenBtn.disabled = true;
+          downloadCSV.style.pointerEvents = 'none';
+          downloadCSV.style.opacity = '0.5';
+          console.error('Error:', error);
+        });
+    }
+
+  </script>
+</body>
+</html>

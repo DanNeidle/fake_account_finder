@@ -532,6 +532,10 @@ def export_results(companies, html_title, descriptor, run_scp = True):
     if not companies:
         print("\nNo results - nothing to export.")
         return
+    
+    # sanitise filename
+    descriptor = re.sub(r'[\\\/:*?"<>|]', '_', descriptor)
+    
     html_file = create_html(companies, html_title, descriptor)
     csv_file = create_csv(companies, descriptor)
     
