@@ -1,6 +1,9 @@
 # Fake Accounts Finder
 
 (c) Dan Neidle of Tax Policy Associates Ltd, 2025
+
+
+
 Licensed under the GNU General Public License, version 2
 
 This script is intended to find potentially fraudulent accounts filed on Companies House. It uses a very simple methodology to do this - see our article at https://taxpolicy.org.uk/2025/01/31/the-trillion-pound-fake-missed-by-companies-house/
