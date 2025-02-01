@@ -2,8 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Report Viewer</title>
-  <!-- Load the Poppins font from Google Fonts -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fake account finder - interactive</title>
+  <!-- (c) Dan Neidle of Tax Policy Associates Ltd, 2015
+   Licensed under the GNU General Public License, version 2 -->
   <link href="https://fonts.googleapis.com/css?family=Poppins:400,500,600&display=swap" rel="stylesheet">
   <style>
     #contentWrapper {
@@ -91,9 +93,9 @@
     }
     /* Table styling for report list */
     #reportTableContainer {
-      max-height: 400px; /* Adjust based on your row height: roughly 10 rows */
+      max-height: 400px; /* Roughly 10 rows */
       overflow-y: auto;
-      border: 1px solid #ccc; /* Optional: add a border around the table container */
+      border: 1px solid #ccc; 
       margin-top: 10px;
     }
     #reportTableContainer table {
@@ -116,6 +118,27 @@
     #reportTableContainer tr:hover {
       background-color: #f0f0f0;
     }
+
+    /* Responsive Design */
+    @media (max-width: 600px) {
+      .container {
+        padding: 0 10px;
+      }
+      .controls {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .controls input[type="search"] {
+        width: 100%;
+        margin-right: 0;
+      }
+      .controls label {
+        margin-right: 0;
+      }
+      #reportTableContainer {
+        max-height: 300px;
+      }
+    }
   </style>
 </head>
 <body>
@@ -124,17 +147,16 @@
     <div class="controls">
       <input type="search" id="reportSearch" placeholder="Search reports..." autocomplete="off">
       <label>
-        <input type="checkbox" id="checkboxDormant"> Dormant
+        <input type="checkbox" id="checkboxDormant"> Dormant only
       </label>
       <label>
-        <input type="checkbox" id="checkboxCash"> Cash Rich Only
+        <input type="checkbox" id="checkboxCash"> High cash only
       </label>
       
       <button class="fullscreen-btn" id="fullscreenBtn" disabled>View full Screen</button>
-      <a href="#" class="download-btn" id="downloadCSV" target="_blank" style="pointer-events: none; opacity: 0.5;">Export data</a>
+      <button class="download-btn" id="downloadCSV" disabled>Export data</button>
     </div>
     
-
     <!-- Container for the report table -->
     <div id="reportTableContainer">
       <!-- Table will be populated via JavaScript -->
@@ -147,6 +169,10 @@
   </div>
 
   <script>
+    // --- Global Variables for Sorting ---
+    let countSortDescending = true;
+    let descSortDescending = false;
+
     // --- Configuration ---
     const assetsPath = '/wp-content/assets/fake_accounts/';
     let sicReports = [];
@@ -157,13 +183,14 @@
       .then(data => {
         sicReports = data;
         populateSICTable();
+        sortTableByCount();
       })
       .catch(error => console.error('Error loading SIC codes JSON:', error));
 
-    // Build the table of reports from the JSON data
+    // Build the table of reports from the JSON data, including the special "All CSV files" row.
     function populateSICTable() {
       const container = document.getElementById('reportTableContainer');
-      container.innerHTML = ''; // clear any existing content
+      container.innerHTML = ''; // Clear any existing content
 
       // Create table element
       const table = document.createElement('table');
@@ -175,10 +202,14 @@
 
       const descHeader = document.createElement('th');
       descHeader.textContent = 'Description';
+      // Add click listener for sorting by description
+      descHeader.addEventListener('click', () => {
+        sortTableByDescription();
+      });
 
       const countHeader = document.createElement('th');
       countHeader.textContent = 'Count';
-      // When the Count header is clicked, sort the table rows by count descending.
+      // Add click listener for sorting by count
       countHeader.addEventListener('click', () => {
         sortTableByCount();
       });
@@ -190,20 +221,48 @@
 
       // Create table body
       const tbody = document.createElement('tbody');
+      
+      // --- Add the special "All CSV files" row first ---
+      const specialRow = document.createElement('tr');
+      specialRow.dataset.file = 'results-all';  // file base is "results-all"
+      specialRow.dataset.count = '2015';
+      specialRow.dataset.special = 'true';  // mark as special
+      const tdSpecialDesc = document.createElement('td');
+      tdSpecialDesc.textContent = 'All SIC codes, cash-rich companies';
+      const tdSpecialCount = document.createElement('td');
+      tdSpecialCount.textContent = '2015';
+      specialRow.appendChild(tdSpecialDesc);
+      specialRow.appendChild(tdSpecialCount);
+
+      // When the special row is clicked:
+      specialRow.addEventListener('click', () => {
+          // Remove any existing selection highlight
+          const allRows = table.querySelectorAll('tbody tr');
+          allRows.forEach(r => r.classList.remove('selected'));
+          specialRow.classList.add('selected');
+
+          // Disable the cash rich checkbox when "All CSV files" is selected.
+          document.getElementById('checkboxCash').disabled = true;
+          loadReportFromRow(specialRow);
+      });
+      
+      tbody.appendChild(specialRow);
+
+      // --- Add regular rows from JSON data ---
       sicReports.forEach(item => {
         const [desc, fileBase, count] = item;
         const row = document.createElement('tr');
         row.dataset.file = fileBase;
         row.dataset.count = count;
 
-        // When a row is clicked, highlight it and load its report.
         row.addEventListener('click', () => {
           // Remove any existing selection highlight
           const allRows = table.querySelectorAll('tbody tr');
           allRows.forEach(r => r.classList.remove('selected'));
           row.classList.add('selected');
-          // Update the search box text (optional)
-          document.getElementById('reportSearch').value = desc + ' - ' + count;
+          
+          // Ensure the cash rich checkbox is enabled for non-special rows.
+          document.getElementById('checkboxCash').disabled = false;
           loadReportFromRow(row);
         });
 
@@ -220,24 +279,54 @@
       container.appendChild(table);
     }
 
-    // Function to sort the table rows by count (descending)
+    // Function to sort the table rows by count (toggling between ascending and descending)
     function sortTableByCount() {
       const table = document.getElementById('reportTable');
       const tbody = table.querySelector('tbody');
       const rows = Array.from(tbody.querySelectorAll('tr'));
-      rows.sort((a, b) => Number(b.dataset.count) - Number(a.dataset.count));
+      
+      rows.sort((a, b) => {
+        return countSortDescending 
+          ? (Number(b.dataset.count) - Number(a.dataset.count))
+          : (Number(a.dataset.count) - Number(b.dataset.count));
+      });
+      
+      // Toggle the sort order for next click
+      countSortDescending = !countSortDescending;
+      
       tbody.innerHTML = '';
       rows.forEach(row => tbody.appendChild(row));
     }
 
-    // Filter table rows as user types in the search input
+    // Function to sort the table rows by description (toggling between ascending and descending)
+    function sortTableByDescription() {
+      const table = document.getElementById('reportTable');
+      const tbody = table.querySelector('tbody');
+      const rows = Array.from(tbody.querySelectorAll('tr'));
+
+      rows.sort((a, b) => {
+        const descA = a.cells[0].textContent.toLowerCase();
+        const descB = b.cells[0].textContent.toLowerCase();
+        if (descA < descB) return descSortDescending ? 1 : -1;
+        if (descA > descB) return descSortDescending ? -1 : 1;
+        return 0;
+      });
+
+      // Toggle the sort order for next click
+      descSortDescending = !descSortDescending;
+
+      tbody.innerHTML = '';
+      rows.forEach(row => tbody.appendChild(row));
+    }
+
+    // Filter table rows as the user types in the search input
     document.getElementById('reportSearch').addEventListener('input', () => {
       const filter = document.getElementById('reportSearch').value.toLowerCase();
       const table = document.getElementById('reportTable');
+      if (!table) return; // In case the table hasn't been created yet.
       const rows = table.querySelectorAll('tbody tr');
       rows.forEach(row => {
         const desc = row.cells[0].textContent.toLowerCase();
-        // If the description contains the filter text, display the row; otherwise, hide it.
         row.style.display = desc.indexOf(filter) > -1 ? '' : 'none';
       });
     });
@@ -265,14 +354,21 @@
 
     // Load the report corresponding to the clicked row.
     function loadReportFromRow(row) {
-      const fileBase = row.dataset.file;
+      let fileBase = row.dataset.file;
       let suffix = '';
-      if (checkboxDormant.checked && checkboxCash.checked) {
-        suffix = '-dormants-cashonly';
-      } else if (checkboxDormant.checked) {
-        suffix = '-dormants';
-      } else if (checkboxCash.checked) {
-        suffix = '-cashonly';
+      
+      // Special handling for the "All CSV files" row:
+      if(fileBase === 'results-all'){
+        // Only the dormant checkbox matters for "All CSV files"
+        suffix = checkboxDormant.checked ? '-dormant' : '';
+      } else {
+        if (checkboxDormant.checked && checkboxCash.checked) {
+          suffix = '-dormants-cashonly';
+        } else if (checkboxDormant.checked) {
+          suffix = '-dormants';
+        } else if (checkboxCash.checked) {
+          suffix = '-cashonly';
+        }
       }
       const finalBase = fileBase + suffix;
 
@@ -281,14 +377,16 @@
 
       // Disable buttons until a valid report is loaded
       fullscreenBtn.disabled = true;
-      downloadCSV.style.pointerEvents = 'none';
-      downloadCSV.style.opacity = '0.5';
+      downloadCSV.disabled = true;
 
-      // Update the CSV download link (will be enabled upon successful load)
-      downloadCSV.href = csvFile;
+      // Update the CSV download link (for exporting)
+      downloadCSV.dataset.csvUrl = csvFile;
 
-      // Set up the Full Screen button to open the HTML file in a new tab (will be enabled upon successful load)
+      // Set up the Full Screen button to open the HTML file in a new tab (enabled upon successful load)
       fullscreenBtn.onclick = () => window.open(htmlFile, '_blank');
+
+      // Set up the Export button click to download the CSV file (enabled upon successful load)
+      downloadCSV.onclick = () => window.location.href = csvFile;
 
       // Load the HTML file content via Fetch API
       fetch(htmlFile)
@@ -302,19 +400,15 @@
           contentDiv.innerHTML = data;
           // Enable buttons now that a valid HTML is loaded
           fullscreenBtn.disabled = false;
-          downloadCSV.style.pointerEvents = 'auto';
-          downloadCSV.style.opacity = '1';
+          downloadCSV.disabled = false;
         })
         .catch(error => {
-          contentDiv.innerHTML = '<p style="color:red;">Error loading the report. Please check your selection.</p>';
-          // Ensure buttons remain disabled in case of error
+          contentDiv.innerHTML = '<p style="color:black;">No companies fit these criteria.</p>';
           fullscreenBtn.disabled = true;
-          downloadCSV.style.pointerEvents = 'none';
-          downloadCSV.style.opacity = '0.5';
+          downloadCSV.disabled = true;
           console.error('Error:', error);
         });
     }
-
   </script>
 </body>
 </html>

@@ -121,13 +121,22 @@ def filter_for_large_companies(companies, lookup_table, cash_only=False, nofilte
         data = extract_ixbrl_data(ixbrl_file_path)
         financials = data.get("financials", {})
         cash = max(
+            (int(v.replace(",", "")) for k, v in financials.items() if "cashbankonhand" in k.lower() and v.replace(",", "").isdigit()),
+            default=0
+        )
+        
+        #old:
+        """
+        cash = max(
             (int(v.replace(",", "")) for k, v in financials.items() if "cash" in k.lower() and v.replace(",", "").isdigit()),
             default=0
         )
+        """
+        
         suspect_data = [
             (k, float(v.replace(",", "")))
             for k, v in financials.items()
-            if "cash" not in k.lower() and v.replace(",", "").isdigit() and float(v.replace(",", "")) > OTHER_ALERT_VALUE
+            if "cashbankonhand" not in k.lower() and v.replace(",", "").isdigit() and float(v.replace(",", "")) > OTHER_ALERT_VALUE
         ] if not cash_only else []
 
         if cash > CASH_ALERT_VALUE or suspect_data:
@@ -624,7 +633,7 @@ def search_all_companies_for_large_cash_holdings(lookup_table, args):
         
         cash = 0
         for key, value in all_accounts_data["financials"].items():
-            if "cash" in key.lower():
+            if "cashbankonhand" in key.lower():
                 clean_str_value = value.replace(",", "")
                 try:
                     value_int = int(clean_str_value)
@@ -959,7 +968,7 @@ def runbatch(target, lookup_table, all_sic_codes):
                 
                 export_results(companies, html_title, descriptor, run_scp=False)
                 
-    print(f"\nCompleted batch run - took {int(start - time.time())}s")
+    print(f"\nCompleted batch run - took {int(time.time() - start)}s")
 
 def setup_argument_parser():
     class CustomFormatter(argparse.RawTextHelpFormatter, argparse.ArgumentDefaultsHelpFormatter):
@@ -1070,7 +1079,7 @@ def main():
         companies = search_all_companies_for_large_cash_holdings(lookup_table, args)
         companies = filter_for_dormant(companies, args.dormantonly)
         companies.sort(key=lambda c: c["Cash"], reverse=True)
-        export_results(companies, f"All companies with cash > £{CASH_ALERT_VALUE/1e6:.0f}m", f"all{'-dormant' if args.dormantonly else ''}")
+        export_results(companies, f"All {'dormant ' if args.dormantonly else ''}companies with cash > £{CASH_ALERT_VALUE/1e6:.0f}m", f"all{'-dormant' if args.dormantonly else ''}")
         
     elif hasattr(args, "runbatchall"):
         all_sics = list(all_sic_codes.keys())

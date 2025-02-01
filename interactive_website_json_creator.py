@@ -1,3 +1,10 @@
+"""
+This script is designed to be run after ./find_companies -batchall puts a complete set of html and csv files in output
+It parses sic_codes.json and the CSV files in output, and saves output/interactive_website_sics.json
+Which the html/js uses to populate the interactive web version of the tool
+"""
+
+
 import json
 import os
 import re
