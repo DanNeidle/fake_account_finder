@@ -730,17 +730,17 @@ def build_accounts_lookup_table():
     print("Done building. Some files not html:", dict(file_types))
     sys.exit(0)
 
-def create_index(csv_path=COMPANIES_HOUSE_SNAPSHOT, db_path=INDEX_DB_FILE):
+def create_index():
     
-    if not os.path.exists(csv_path):
-        sys.exit(f"Error: CSV file '{csv_path}' not found.")
+    if not os.path.exists(COMPANIES_HOUSE_SNAPSHOT):
+        sys.exit(f"Error: CSV file '{COMPANIES_HOUSE_SNAPSHOT}' not found.")
 
     # Remove existing DB if exists
-    if os.path.exists(db_path):
-        print(f"Creating index; replacing existing database {db_path}")
-        os.remove(db_path)
+    if os.path.exists(INDEX_DB_FILE):
+        print(f"Creating index; replacing existing database {INDEX_DB_FILE}")
+        os.remove(INDEX_DB_FILE)
     else:
-        print(f"Creating index. Database Path: {db_path}")
+        print(f"Creating index. Database Path: {INDEX_DB_FILE}")
         
     # Define address fields
     address_fields = [
@@ -754,7 +754,7 @@ def create_index(csv_path=COMPANIES_HOUSE_SNAPSHOT, db_path=INDEX_DB_FILE):
         "RegAddress.PostCode"
     ]
 
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(INDEX_DB_FILE)
     cursor = conn.cursor()
 
     # Optimize SQLite for faster insertion
@@ -790,7 +790,7 @@ def create_index(csv_path=COMPANIES_HOUSE_SNAPSHOT, db_path=INDEX_DB_FILE):
     conn.commit()
 
     # Read CSV and populate the database
-    with open(csv_path, 'r', newline='', encoding='utf-8') as csvfile:
+    with open(COMPANIES_HOUSE_SNAPSHOT, 'r', newline='', encoding='utf-8') as csvfile:
         # Read the first line to get headers
         first_line = csvfile.readline()
         headers = first_line.strip().split(',')
@@ -813,7 +813,7 @@ def create_index(csv_path=COMPANIES_HOUSE_SNAPSHOT, db_path=INDEX_DB_FILE):
 
         # Count total rows for progress bar
         
-        with open(csv_path, 'r', encoding='utf-8') as f:
+        with open(COMPANIES_HOUSE_SNAPSHOT, 'r', encoding='utf-8') as f:
             total_rows = sum(1 for _ in f) - 1  # Exclude header
         
         # Reset file pointer to after the header
@@ -893,7 +893,37 @@ def create_index(csv_path=COMPANIES_HOUSE_SNAPSHOT, db_path=INDEX_DB_FILE):
                 conn.rollback()
 
     conn.close()
-    print(f"Indexing complete. Database saved to '{db_path}'.")
+    print(f"Indexing complete. Database saved to '{INDEX_DB_FILE}'.")
+    
+def find_top_addresses(number_to_find):
+    """
+    Returns a list of the top `number_to_find` most common addresses from the Companies table,
+    sorted by the number of companies using each address (largest first).
+
+    Each item in the returned list is a tuple:
+        (FullAddress, frequency)
+
+    Returns:
+        List[Tuple[str, int]]: A list of tuples containing the address and its frequency.
+    """
+    # Connect to the SQLite database
+    conn = sqlite3.connect(INDEX_DB_FILE)
+    cursor = conn.cursor()
+    
+    # Query to count occurrences of each address
+    query = """
+        SELECT FullAddress, COUNT(*) AS frequency
+        FROM Companies
+        WHERE TRIM(FullAddress) <> ''
+        GROUP BY FullAddress
+        ORDER BY frequency DESC
+        LIMIT ?
+    """
+    cursor.execute(query, (number_to_find,))
+    top_addresses = cursor.fetchall()
+    
+    conn.close()
+    return top_addresses
 
 def filter_for_dormant(companies, dormant_arg):
     if dormant_arg:
@@ -940,9 +970,35 @@ Some interesting SIC codes:
     return interesting_sics
 
 
+def display_top_addresses(top_addresses):
+    # Determine dynamic column widths
+    # The index column width is based on the number of rows.
+    index_width = len(str(len(top_addresses)))  
+    
+    # Frequency column width considers the header "Frequency" and the maximum frequency value.
+    frequency_width = max(len("Frequency"), *(len(str(freq)) for _, freq in top_addresses)) if top_addresses else len("Frequency")
+    
+    # Set a reasonable width for the Address column
+    address_width = 50
+
+    header = f"{'Rank':>{index_width}}  {'Address':<{address_width}}  {'Frequency':>{frequency_width}}"
+    print(header)
+    print("-" * len(header))
+
+    total_companies = 0
+    for idx, (address, frequency) in enumerate(top_addresses, start=1):
+        total_companies += frequency
+        
+        # Print each row with proper alignment.
+        # Addresses that exceed the set width will be truncated.
+        truncated_address = (address[:address_width - 3] + '...') if len(address) > address_width else address
+        print(f"{idx:>{index_width}}  {truncated_address:<{address_width}}  {frequency:>{frequency_width},}")
+    
+    print(f"\nTotal companies registered at these addresses: {total_companies:,}")    
+
 # runs a batch of all SICs for website
 # not very efficient as doesn't cache FCA search results, when one company could appear four times    
-def runbatch(target, lookup_table, all_sic_codes):
+def runsicbatch(target, lookup_table, all_sic_codes):
     print(f"Running batch for {target}")
     
     interesting_sics = re.findall(r'\b\d{5}\b', return_interesting_sics())
@@ -957,14 +1013,10 @@ def runbatch(target, lookup_table, all_sic_codes):
                 
                 iter += 1
                 descriptor = f"{SIC}_{all_sic_codes[SIC].replace(' ', '_')}{'-dormants' if dormant else ''}{'-cashonly' if cashonly else ''}"
-                html_title = f"{SIC}: {all_sic_codes[SIC]}{', dormants' if dormant else ''}{', cash-rich' if cashonly else ''}"
-                search_description = f"{iter}/{len(target) * 4}- {html_title}"
-                print(descriptor)
-                print(html_title)
-                print(search_description)
-                time.sleep(1)
+                html_title = f"{SIC}: '{all_sic_codes[SIC]}'{', dormants' if dormant else ''}{', cash-rich' if cashonly else ''}"
+                print(f"\nBatch run: this is {iter} out of {len(target) * 4}- {html_title}")
                 
-                companies = indexed_search("SIC", search_terms, search_description)    
+                companies = indexed_search("SIC", search_terms, html_title)    
                 companies = filter_for_large_companies(companies, lookup_table, cash_only=cashonly, nofilter=False)
                 companies = filter_for_dormant(companies, dormant)
                 if SIC in interesting_sics:
@@ -973,7 +1025,30 @@ def runbatch(target, lookup_table, all_sic_codes):
                 
                 export_results(companies, html_title, descriptor, run_scp=False)
                 
-    print(f"\nCompleted batch run - took {int(time.time() - start)}s")
+    print(f"\nCompleted SIC batch run - took {int(time.time() - start)}s")
+
+
+def runaddressbatch(top_addresses, lookup_table):
+
+    start = time.time()
+    for (address, frequency) in top_addresses:
+        iter = 0
+        for cashonly in [True, False]:
+            for dormant in [True, False]:
+                
+                iter += 1
+                descriptor = f"{address.replace(' ', '_')}{'-dormants' if dormant else ''}{'-cashonly' if cashonly else ''}"
+                html_title = f"'{address}'{', dormants' if dormant else ''}{', cash-rich' if cashonly else ''}"
+                print(f"\nBatch run: this is {iter} out of {len(top_addresses) * 4}")
+                
+                companies = indexed_search("address", address, html_title)    
+                companies = filter_for_large_companies(companies, lookup_table, cash_only=cashonly, nofilter=False)
+                companies = filter_for_dormant(companies, dormant)
+                
+                export_results(companies, html_title, descriptor, run_scp=False)
+                
+    print(f"\nCompleted address batch run - took {int(time.time() - start)}s")
+        
 
 def setup_argument_parser():
     class CustomFormatter(argparse.RawTextHelpFormatter, argparse.ArgumentDefaultsHelpFormatter):
@@ -996,11 +1071,13 @@ def setup_argument_parser():
     group.add_argument("-sichelp", nargs="?", const="help", help="Show available SIC codes (optionally filter).", default=argparse.SUPPRESS)
     group.add_argument("-sic", help="Search by SIC code(s).", default=argparse.SUPPRESS)
     group.add_argument("-address", help="Search by partial address.", default=argparse.SUPPRESS)
+    group.add_argument("-topaddress", type=int, metavar="NUMBER", help="Display the top NUMBER most common addresses", default=argparse.SUPPRESS)
     group.add_argument("-all", action="store_true", help="Search accounts of *all* companies for high cash holdings (will take 40 mins+).", default=argparse.SUPPRESS)
     group.add_argument("-buildlookup", action="store_true", help="Build the accounts lookup table.", default=argparse.SUPPRESS)
     group.add_argument("-buildindex", action="store_true", help="Build an index for SIC/address searches. Will take a few minutes.", default=argparse.SUPPRESS)
-    group.add_argument("-runbatchinteresting", action="store_true", help="Run on all 'interesting' SICs", default=argparse.SUPPRESS)
-    group.add_argument("-runbatchall", action="store_true", help="Run on all SICs", default=argparse.SUPPRESS)
+    group.add_argument("-runinterestingsics", action="store_true", help="Run on all 'interesting' SICs", default=argparse.SUPPRESS)
+    group.add_argument("-runallsics", action="store_true", help="Run on all SICs", default=argparse.SUPPRESS)
+    group.add_argument("-runtopaddr", type=int, metavar="NUMBER", help="Run on the top NUMBER most common addresses", default=argparse.SUPPRESS)
 
     parser.add_argument("-reg", action="store_true", help="Filter out regulated companies.")
     parser.add_argument("-cashonly", action="store_true", help="Only return cash-rich companies, ignoring companies with other large balance sheet items.")
@@ -1071,6 +1148,19 @@ def main():
         build_accounts_lookup_table()
         sys.exit(0)
         
+    # find the top addresses
+    elif hasattr(args, "topaddress"):
+        
+        print(f"\nThe most common {args.topaddress} addresses are:\n")
+        top_addresses = find_top_addresses(args.topaddress)
+        display_top_addresses(top_addresses)
+        sys.exit(0)
+        
+    elif hasattr(args, "topaddress"):
+        print("nope")
+        sys.exit(0)
+        
+        
     validate_dependencies()
 
     lookup_table = load_json_file(ACCOUNTS_LOOKUP_TABLE_FILE, "Accounts lookup table")
@@ -1086,15 +1176,25 @@ def main():
         companies.sort(key=lambda c: c["Cash"], reverse=True)
         export_results(companies, f"All {'dormant ' if args.dormantonly else ''}companies with cash > £{CASH_ALERT_VALUE/1e6:.0f}m", f"all{'-dormant' if args.dormantonly else ''}")
         
-    elif hasattr(args, "runbatchall"):
+    elif hasattr(args, "runallsics"):
         all_sics = list(all_sic_codes.keys())
-        runbatch(all_sics, lookup_table, all_sic_codes)
+        runsicbatch(all_sics, lookup_table, all_sic_codes)
         sys.exit(0)
         
-    elif hasattr(args, "runbatchinteresting"):
+    elif hasattr(args, "runinterestingsics"):
         interesting_sics = re.findall(r'\b\d{5}\b', return_interesting_sics())
-        runbatch(interesting_sics, lookup_table, all_sic_codes)
+        runsicbatch(interesting_sics, lookup_table, all_sic_codes)
         sys.exit(0)
+        
+    elif hasattr(args, "runtopaddr"):
+        print(f"\nRunning on the most common {args.runtopaddr} addresses:\n")
+        top_addresses = find_top_addresses(args.runtopaddr)
+        display_top_addresses(top_addresses)
+        
+        runaddressbatch(top_addresses, lookup_table)
+        sys.exit(0)
+        
+        
 
     # prepare SIC search
     elif hasattr(args, "sic"):
