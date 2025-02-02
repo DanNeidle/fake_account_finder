@@ -256,7 +256,8 @@ def remove_regulated_companies(companies):
     return unreg
 
 def create_html(suspect_companies, table_title, descriptor):
-    filename = f"output/results-{descriptor}.html"
+    filename = os.path.join("output", f"results-{descriptor}.html")
+    
     os.makedirs("output", exist_ok=True)
 
     env = Environment(
@@ -513,7 +514,8 @@ def create_html(suspect_companies, table_title, descriptor):
     return filename
 
 def create_csv(suspect_companies, descriptor):
-    filename = f"output/results-{descriptor}.csv"
+    filename = os.path.join("output", f"results-{descriptor}.csv")
+    
     os.makedirs("output", exist_ok=True)
     max_items = max((len(c.get("SuspectData", [])) for c in suspect_companies), default=0)
     headers = ["Company Name", "Company Number", "Cash"]
@@ -995,6 +997,13 @@ def display_top_addresses(top_addresses):
         print(f"{idx:>{index_width}}  {truncated_address:<{address_width}}  {frequency:>{frequency_width},}")
     
     print(f"\nTotal companies registered at these addresses: {total_companies:,}")    
+    
+    filename = os.path.join("output", f"top_addresses.json")
+    
+    with open(filename,"w",encoding="utf-8") as j:
+        json.dump(top_addresses, j, indent=4)
+        
+    print(f"Saved to {filename}")
 
 # runs a batch of all SICs for website
 # not very efficient as doesn't cache FCA search results, when one company could appear four times    
@@ -1031,8 +1040,9 @@ def runsicbatch(target, lookup_table, all_sic_codes):
 def runaddressbatch(top_addresses, lookup_table):
 
     start = time.time()
-    for (address, frequency) in top_addresses:
-        iter = 0
+    iter = 0
+    
+    for (address, frequency) in top_addresses:    
         for cashonly in [True, False]:
             for dormant in [True, False]:
                 
