@@ -944,6 +944,9 @@ Some interesting SIC codes:
 # not very efficient as doesn't cache FCA search results, when one company could appear four times    
 def runbatch(target, lookup_table, all_sic_codes):
     print(f"Running batch for {target}")
+    
+    interesting_sics = re.findall(r'\b\d{5}\b', return_interesting_sics())
+    
     iter = 0
     start = time.time()
     
@@ -964,7 +967,9 @@ def runbatch(target, lookup_table, all_sic_codes):
                 companies = indexed_search("SIC", search_terms, search_description)    
                 companies = filter_for_large_companies(companies, lookup_table, cash_only=cashonly, nofilter=False)
                 companies = filter_for_dormant(companies, dormant)
-                companies = filter_for_reg_status(companies, True)
+                if SIC in interesting_sics:
+                    companies = filter_for_reg_status(companies, True)
+                    html_title += ", unregulated"
                 
                 export_results(companies, html_title, descriptor, run_scp=False)
                 
