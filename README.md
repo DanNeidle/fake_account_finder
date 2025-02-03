@@ -218,6 +218,13 @@ You can, alternatively, search by a registered office address. Make sure to incl
 
 As with SIC searches, you can combine with -cashonly, -dormant-only, -nofilter, or -reg. 
 
+You can also get a list of the most common registered office addresses, for example:
+```bash
+./find_companies -topaddress 100
+```
+
+Prints the 100 most common registered office addresses. It's not very smart, so small variations (UK vs England) will be listed as different addresses.
+
 ### Search every UK company for large cash balances
 
 This will take a fairly long time (40 minutes on my PC), because it is parsing the 3 million account files individually:
@@ -226,6 +233,15 @@ This will take a fairly long time (40 minutes on my PC), because it is parsing t
 ```
 
 You can combine with -dormant to only return dormant companies.
+
+### Batch operation and web app
+
+There are two batch operations, designed to create data for the web app (the html files)
+
+- runallsics goes through every single SIC code. Where it's a financial SIC it checks with the FCA register; for other SICs it doesn't (as makes things much much slower)
+- runtopaddr NUMBER goes through the top NUMBER most common addresses.
+
+To create the data for the webapp you need to run both batch commands. Then run the helper app, interactive_website_json_creator.py, which creates two index json files that the web app can use to populate its list of categories/addresses.
 
 ## 7. Output files
 After a search, the script saves results to:
