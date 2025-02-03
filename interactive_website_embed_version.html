@@ -14,27 +14,6 @@
   <link rel="apple-touch-icon" href="/wp-content/assets/logo_emblem_on_blue.png">
 
   <style>
-    /* Header styling */
-    header.site-header {
-      background-color: #1133AF;
-      color: #fff;
-      padding: 15px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 20px; /* White space between header and content */
-    }
-    header.site-header h1 {
-      margin: 0;
-      font-size: 24px;
-    }
-    header.site-header a {
-      display: inline-block;
-    }
-    header.site-header img {
-      max-height: 50px;
-    }
-
     /* Basic styling and responsive design */
     body {
       font-family: 'Poppins', sans-serif;
@@ -150,6 +129,7 @@
       background-color: #1133AF;
       color: #FFFFFF;
     }
+
     #reportTableContainer tr:hover {
       background-color: #f0f0f0;
     }
@@ -176,14 +156,6 @@
   </style>
 </head>
 <body>
-  <!-- Header: will be hidden if the page is embedded -->
-  <header class="site-header">
-    <h1>Fake Accounts Finder</h1>
-    <a href="https://taxpolicy.org.uk" target="_blank">
-      <img src="https://taxpolicy.org.uk/wp-content/uploads/elementor/thumbs/logo-in-banner-tight-1-quqdc4qw34zmeg68ggs0psp29qcsftxn2pptrt1h6m.png" alt="Tax Policy Logo">
-    </a>
-  </header>
-
   <div class="container">
     <!-- Tab bar -->
     <div class="tabs">
@@ -239,13 +211,6 @@
   </div>
 
   <script>
-    // Hide the header if the page is embedded either via iframe
-    // or if the URL includes the query parameter "embed=1"
-    if (window.self !== window.top || window.location.search.indexOf('embed=1') !== -1) {
-      var header = document.querySelector('header.site-header');
-      if (header) header.style.display = 'none';
-    }
-
     // Configuration
     const assetsPath = '/wp-content/assets/fake_accounts/';
 
@@ -285,6 +250,7 @@
           sortTableByCount('sic');
         })
         .catch(error => console.error('Error loading SIC codes JSON:', error));
+      
     }
 
     function initAddressTab() {
@@ -470,6 +436,7 @@
           downloadCSV.disabled = true;
           console.error('Error:', error);
         });
+
     }
 
     // Set up filtering and checkbox change events for both tabs
