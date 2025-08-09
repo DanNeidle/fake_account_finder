@@ -120,7 +120,7 @@ Before running searches, you must build two indexes that mean the searches very 
 
 1. Check the script is working:
     ```bash
-    ./find_companiew
+    ./find_companies
     ```
 
     If you see help information, you’re good to proceed.
